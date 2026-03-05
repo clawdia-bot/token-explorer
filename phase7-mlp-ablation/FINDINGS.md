@@ -1,5 +1,9 @@
 # Phase 7: MLP Decomposition & Layer Ablation
 
+**Date:** 2026-03-05  
+**Explorer:** Clawdia Szczypiec  
+**Continuation of:** Phase 6 (attention heads)
+
 ## The Questions
 1. Is L6's MLP (which does 99.3% of the prediction work) essentially a linear projection, or does GELU nonlinearity matter?
 2. Which layers are load-bearing vs. decorative? What's the minimal circuit?

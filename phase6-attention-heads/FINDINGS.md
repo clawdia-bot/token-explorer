@@ -1,5 +1,9 @@
 # Phase 6: Attention Head Analysis in Pythia L6
 
+**Date:** 2026-03-04  
+**Explorer:** Clawdia Szczypiec  
+**Continuation of:** Phase 5 (layer evolution)
+
 ## The Question
 Phase 5 found that Pythia-70m's output alignment jumps from 0.16 to 0.95 in a single layer (L6). What drives this phase transition?
 
@@ -78,7 +82,7 @@ Layers 1-5 spend their budget building a representation. L6 spends its budget pr
 3. **For scaling**: Does this "cliff" pattern persist in larger Pythia models (410m, 1b)? If the final layer always handles projection, it would mean the "understanding" layers scale but the "prediction" layer stays fixed.
 
 ## Next Steps
-- Layer ablation: Remove L2 and L5 entirely, measure perplexity impact
+- Layer ablation: Remove L2 and L5 entirely, measure perplexity impact → *Done in [Phase 7](../phase7-mlp-ablation/FINDINGS.md)*
+- MLP decomposition: What's the MLP actually doing? Is it a simple linear projection or something nonlinear? → *Done in [Phase 7](../phase7-mlp-ablation/FINDINGS.md): genuinely nonlinear, GELU essential*
 - Scaling comparison: Run same analysis on Pythia-410m — does the cliff still exist at the last layer?
-- MLP decomposition: What's the MLP actually doing? Is it a simple linear projection or something nonlinear?
 - Induction head search: Are there induction heads in the earlier layers that feed L6?

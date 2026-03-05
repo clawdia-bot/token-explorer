@@ -132,11 +132,11 @@ Position 0 essentially **overwrites** the token embedding. The model's first imp
 
 ## Updated Future Directions
 
-1. **Cross-model positional comparison:** Do models with RoPE (Llama, Mistral) show the same orthogonality? RoPE is *designed* to be orthogonal — but GPT-2 discovered it accidentally.
+1. **Cross-model positional comparison:** Do models with RoPE (Llama, Mistral) show the same orthogonality? RoPE is *designed* to be orthogonal — but GPT-2 discovered it accidentally. → *Partially answered in [Phase 4](../phase4-cross-model/FINDINGS.md): GPT-Neo shows no orthogonality; it's GPT-2 specific.*
 
 2. **Subspace partition quantification:** Can we cleanly separate the 768 dims into "token dims" and "position dims"? What lives in the overlap region?
 
-3. **Layer evolution:** How does the token-position orthogonality change through the 12 transformer layers? Does it merge or stay separate?
+3. **Layer evolution:** How does the token-position orthogonality change through the 12 transformer layers? Does it merge or stay separate? → *Explored in [Phase 5](../phase5-layer-evolution/FINDINGS.md).*
 
 4. **Position 0 as BOS:** Is position 0's huge norm functionally equivalent to a BOS token? Could you achieve the same effect with a normal-norm position embedding plus an explicit BOS token?
 

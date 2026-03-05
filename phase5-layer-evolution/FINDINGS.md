@@ -171,9 +171,9 @@ Phase 5 says: **Partially correct.** Semantic clustering is strongest in early/m
 
 ## Future Directions
 
-1. **Attention pattern analysis:** Which attention heads in Pythia's L6 are responsible for the phase transition? Is it one head or distributed?
-2. **Residual stream decomposition:** Separate the attention and MLP contributions at each layer. Which sub-layer drives the anisotropy changes?
-3. **Layer ablation:** What happens to the output if you skip Layer 6 in Pythia? Does the model still produce coherent predictions?
+1. **Attention pattern analysis:** Which attention heads in Pythia's L6 are responsible for the phase transition? → *Answered in [Phase 6](../phase6-attention-heads/FINDINGS.md): MLP does 99.3%, attention is redundant.*
+2. **Residual stream decomposition:** Separate the attention and MLP contributions at each layer. → *Answered in [Phase 6](../phase6-attention-heads/FINDINGS.md).*
+3. **Layer ablation:** What happens to the output if you skip Layer 6 in Pythia? → *Answered in [Phase 7](../phase7-mlp-ablation/FINDINGS.md): Pythia is effectively a 2-layer model.*
 4. **Scaling:** Does Pythia-410m still concentrate prediction in one layer, or does it distribute it?
 5. **The norm explosion question:** Are the high-norm tokens in middle layers the "important" tokens for prediction? Is norm a proxy for attention-weighted information flow?
 

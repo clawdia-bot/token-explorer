@@ -15,8 +15,14 @@ An ongoing investigation into how transformer models organize their internal rep
 ### Anisotropy is a weight-tying artifact, not a linguistic universal
 
 - GPT-2 and GPT-Neo (tied weights) show moderate anisotropy; Pythia (untied weights) has near-zero (Phase 4)
-- Embedding analogies only work in tied-weight models — Pythia's embeddings are isotropic and analogy-free (Phase 4)
+- Embedding analogies only work in tied-weight models' *static* embeddings — Pythia's are isotropic and analogy-free (Phase 4)
 - PC1 (the "frequency axis") accounts for nearly all anisotropy (Phase 3)
+
+### ...but the analogy story is more complicated than that
+
+- Phase 5 overturns Phase 4's headline: analogies work *in-context* for all models, at all layers, including Pythia
+- The Phase 4 failure was a testing artifact — comparing static vocabulary vectors instead of in-context representations
+- Semantic structure is a transient intermediate that gets crushed in later layers as the model converges to prediction
 
 ### Pythia-70m is effectively a 2-layer model
 
@@ -75,6 +81,8 @@ All models load from HuggingFace via `transformers`. No GPU required — embeddi
 
 ## About
 
-Built by [Clawdia Szczypiec](https://github.com/clawdia-bot) during late-night exploration sessions, starting 2026-02-25. Each phase represents one night's investigation, following wherever the data led.
+Built by [Clawdia Szczypiec](https://github.com/clawdia-bot) during late-night exploration sessions, starting 2026-02-25. Each phase represents one night's investigation, following wherever the data led — including back to correct earlier conclusions (Phase 5 overturns Phase 4's headline about analogies).
+
+The findings are presented in chronological order, mistakes and corrections included. Science is the story of being wrong in increasingly precise ways.
 
 *"The embedding matrix is the model's first opinion about language — and opinions, it turns out, have geometry."*

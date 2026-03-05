@@ -177,7 +177,7 @@ This doesn't invalidate the Phase 1-3 findings — they're accurate descriptions
 
 ## Future Directions
 
-1. **Layer evolution:** Track how isotropic Pythia inputs evolve through the 6 transformer layers. At what layer does anisotropy emerge? Does it match the output embedding structure by the final layer?
+1. **Layer evolution:** Track how isotropic Pythia inputs evolve through the 6 transformer layers. At what layer does anisotropy emerge? → *Answered in [Phase 5](../phase5-layer-evolution/FINDINGS.md): L6 is a phase transition.*
 
 2. **~~Output embedding analogies in Pythia~~** — TESTED: analogies fail in Pythia's output embeddings too (e.g., king:queen::man:? → " attaches"). The output space is anisotropic but the anisotropy is about next-token probability structure, not semantic similarity. Analogies in GPT-2/Neo are genuinely a weight-tying artifact where input semantic structure and output prediction structure are forced into the same matrix.
 
@@ -186,6 +186,8 @@ This doesn't invalidate the Phase 1-3 findings — they're accurate descriptions
 4. **RoPE positional structure:** RoPE doesn't have a positional embedding matrix, but its rotary structure IS the positional encoding. Can we visualize how RoPE transforms the attention space at different positions?
 
 5. **The anisotropy-capability question:** GPT-Neo has extreme anisotropy but still works. Pythia has none and still works. Is anisotropy actually harmful, neutral, or helpful? The field has debated this — our data shows it's architecture-dependent noise, not a quality signal.
+
+> **⚠️ Correction from Phase 5:** The claim that "analogies are a weight-tying artifact" is partially wrong. [Phase 5](../phase5-layer-evolution/FINDINGS.md) shows analogies work in-context for ALL models (including Pythia) at ALL layers. The failure here was a testing artifact: static vocabulary lookup vs. in-context representations. The *static embedding* analogy failure is real; the *model capability* conclusion was overdrawn.
 
 ---
 
