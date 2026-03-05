@@ -1,0 +1,15 @@
+# Data files (reproducible from scripts)
+*.npy
+*.json
+!package.json
+
+# Visualizations (reproducible from scripts)
+*.html
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
