@@ -12,7 +12,8 @@ from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 from scipy import stats
 
-OUT = "/Users/clawdia/.openclaw/workspace/projects/token-explorer"
+import os
+OUT = os.path.dirname(os.path.abspath(__file__))
 
 print("Loading GPT-2 weights...")
 path = hf_hub_download('gpt2', 'pytorch_model.bin')

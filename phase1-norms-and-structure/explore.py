@@ -12,7 +12,7 @@ from transformers import AutoTokenizer
 import json
 import os
 
-OUT = "/Users/clawdia/.openclaw/workspace/projects/token-explorer"
+OUT = os.path.dirname(os.path.abspath(__file__))
 
 print("Loading GPT-2 embeddings...")
 path = hf_hub_download('gpt2', 'pytorch_model.bin')

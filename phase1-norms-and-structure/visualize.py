@@ -7,7 +7,8 @@ from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 import json
 
-OUT = "/Users/clawdia/.openclaw/workspace/projects/token-explorer"
+import os
+OUT = os.path.dirname(os.path.abspath(__file__))
 
 print("Loading embeddings...")
 path = hf_hub_download('gpt2', 'pytorch_model.bin')
