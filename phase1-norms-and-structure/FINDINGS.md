@@ -56,7 +56,7 @@ The token-length correlation actually **strengthens** from the centroid (-0.166 
 
 **Farthest from centroid:** `'SPONSORED'` (dist=5.569) — the same token that has the highest origin-based norm. This outlier is robust to reference point.
 
-**Most directionally unique:** `' the'` (cosine to mean=0.135) — more directionally distinct from the average token than any other in the vocabulary.
+**Most dissimilar from mean direction:** `' the'` (cosine to mean=0.135) — more directionally distinct from the average token than any other. Note: this measures distance from the mean, not from every individual token.
 
 ## 5. Token Categories
 
@@ -89,7 +89,7 @@ Most distant category pair: cyrillic x number (cosine=0.628).
 2. **The space is genuinely high-dimensional** (428-587 effective dims out of 768). No 2D visualization can capture this — UMAP shows neighborhoods, not the space.
 3. **Moderate anisotropy** (mean cosine 0.269). Embeddings cluster directionally but aren't degenerate.
 4. **"Near the centroid" means undertrained**, not semantically central. Glitch tokens like `' externalToEVA'` live there.
-5. **`' the'` is directionally unique** (lowest cosine to mean at 0.135). The most common English word occupies a direction shared by nothing else.
+5. **`' the'` is most dissimilar from the mean direction** (cosine to mean=0.135, lowest of any token). This measures distance from the average, not from every other token individually.
 
 ## Files
 

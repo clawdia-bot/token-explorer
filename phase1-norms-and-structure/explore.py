@@ -133,7 +133,7 @@ print(f"  From centroid: BPE index vs dist r={r_idx_centered:.3f}, token length 
 print(f"  Closest to centroid: {repr(labels[closest_to_mean[0]])} (dist={dists_to_mean[closest_to_mean[0]]:.3f})")
 print(f"  Farthest from centroid: {repr(labels[farthest_from_mean])} (dist={dists_to_mean[farthest_from_mean]:.3f})")
 min_cos_idx = int(cos_to_mean.argmin())
-print(f"  Most directionally unique: {repr(labels[min_cos_idx])} (cosine to mean={cos_to_mean.min():.3f})")
+print(f"  Most dissimilar from mean direction: {repr(labels[min_cos_idx])} (cosine to mean={cos_to_mean.min():.3f})")
 
 ratio = abs(r_idx_centered) / abs(r_idx)
 print(f"  -> Centroid correlation is {ratio:.0%} of origin correlation. Real structure, partly amplified by centroid displacement.")
