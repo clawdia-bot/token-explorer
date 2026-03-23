@@ -53,7 +53,7 @@ print(f"  Norms: mean={norms.mean():.3f} +/- {norms.std():.3f}, range [{norms.mi
 print(f"  Smallest: {repr(labels[smallest[0]])} ({norms[smallest[0]]:.3f}) — common preposition")
 print(f"  Largest:  {repr(labels[largest[0]])} ({norms[largest[0]]:.3f}) — rare label")
 print(f"  Token length vs norm: r={r_len:.3f} (shorter tokens tend toward higher frequency)")
-print(f"  -> The model pushes common tokens toward the origin; rare tokens orbit the periphery.")
+print(f"  -> Rare tokens have higher norms. But is this real structure or an artifact? See section 4.")
 
 # ============================================================
 # 2. ANISOTROPY
@@ -135,12 +135,8 @@ print(f"  Farthest from centroid: {repr(labels[farthest_from_mean])} (dist={dist
 min_cos_idx = int(cos_to_mean.argmin())
 print(f"  Most directionally unique: {repr(labels[min_cos_idx])} (cosine to mean={cos_to_mean.min():.3f})")
 
-# Data-driven conclusion
-if abs(r_idx_centered) > abs(r_idx) * 0.5:
-    print(f"  -> Frequency-distance holds from both reference points. The radial structure is real.")
-else:
-    print(f"  -> Correlation weakens significantly from centroid. The origin-based finding is partly")
-    print(f"     an artifact of centroid displacement — common tokens pull the mean toward them.")
+ratio = abs(r_idx_centered) / abs(r_idx)
+print(f"  -> Centroid correlation is {ratio:.0%} of origin correlation. Real structure, partly amplified by centroid displacement.")
 
 # ============================================================
 # 5. TOKEN CATEGORIES
