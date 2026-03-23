@@ -71,6 +71,7 @@ Some weird tokens like `' externalToEVA'` collapsed to ghost-cluster norms (~3.0
 | File | Description |
 |------|-------------|
 | `deep_dive.py` | Analysis: ghost cluster, analogies, nearest neighbors, weird tokens |
-| `charts.py` | Ghost cluster heatmap + nearest neighbor radial graphs |
-| `analogy_explorer.py` | Interactive analogy explorer (local web server at localhost:8765) |
+| `charts.py` | Ghost cluster heatmap with reference tokens |
+| `analogy_explorer.py` | Interactive analogy explorer (localhost:8765) |
+| `neighbor_explorer.py` | Interactive nearest neighbor explorer (localhost:8766) |
 | `results.json` | Detailed data: full neighbor lists, analogy results, ghost cluster stats |
