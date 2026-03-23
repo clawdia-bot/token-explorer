@@ -144,7 +144,6 @@ cats = results['categories']
 sorted_cats = sorted(cats.items(), key=lambda x: x[1]['mean_norm'])
 cat_names = [c[0] for c in sorted_cats]
 cat_means = [c[1]['mean_norm'] for c in sorted_cats]
-cat_stds = [c[1]['std_norm'] for c in sorted_cats]
 cat_counts = [c[1]['count'] for c in sorted_cats]
 
 fig.add_trace(go.Bar(

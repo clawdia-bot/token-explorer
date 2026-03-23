@@ -8,7 +8,7 @@ A complete investigation into how transformer models organize their internal rep
 
 ### The embedding matrix has rich structure before any attention
 
-- Token norms encode frequency: common tokens cluster near the origin, rare tokens orbit far (Phase 1)
+- Token norms correlate with rarity (r=0.41 from origin, r=0.21 from centroid — real but amplified by naive measurement) (Phase 1)
 - Control characters collapse to identical "I don't know" vectors — except `\n`, which earned its own identity (Phase 2)
 - Raw embedding analogies work: king:queen::man:woman, with no fine-tuning needed (Phase 2)
 
@@ -41,7 +41,7 @@ A complete investigation into how transformer models organize their internal rep
 
 | Phase | Directory | Focus |
 |-------|-----------|-------|
-| 1 | [`phase1-norms-and-structure/`](phase1-norms-and-structure/) | Norms, PCA, dimensionality, anisotropy, script clustering |
+| 1 | [`phase1-norms-and-structure/`](phase1-norms-and-structure/) | Norms, PCA, dimensionality, anisotropy, origin vs centroid, categories |
 | 2 | [`phase2-ghost-cluster-and-analogies/`](phase2-ghost-cluster-and-analogies/) | Ghost cluster, embedding analogies, nearest neighbors, weird tokens |
 | 3 | [`phase3-positional-embeddings/`](phase3-positional-embeddings/) | Positional embedding geometry, bookend anomaly, learned sinusoids |
 | 4 | [`phase4-cross-model/`](phase4-cross-model/) | GPT-2 vs GPT-Neo-125M vs Pythia-70m — weight tying as root cause of anisotropy |

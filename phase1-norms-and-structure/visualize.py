@@ -5,7 +5,6 @@ import torch
 import numpy as np
 from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
-import json
 
 import os
 import sys
@@ -166,7 +165,4 @@ with open(out_path, 'w') as f:
     f.write(html_str)
 print(f"Saved to {out_path}")
 
-# Also save coords for later analysis
-np.save(f"{OUT}/umap_coords.npy", coords)
-np.save(f"{OUT}/categories.npy", np.array(categories))
 print("Done!")

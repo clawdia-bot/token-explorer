@@ -88,7 +88,7 @@ print("3. EFFECTIVE DIMENSIONALITY — how much space is actually used?")
 print("="*60)
 
 emb_centered = emb - mean_emb
-U, S, Vt = np.linalg.svd(emb_centered, full_matrices=False)
+_, S, _ = np.linalg.svd(emb_centered, full_matrices=False)
 explained_var = S**2 / (emb.shape[0] - 1)
 total_var = explained_var.sum()
 explained_ratio = explained_var / total_var
@@ -288,10 +288,8 @@ with open(os.path.join(OUT, 'results.json'), 'w') as f:
 
 # Save data for visualization
 np.save(os.path.join(OUT, 'norms.npy'), norms)
-np.save(os.path.join(OUT, 'dists_to_mean.npy'), dists_to_mean)
 np.save(os.path.join(OUT, 'explained_ratio.npy'), explained_ratio)
-np.save(os.path.join(OUT, 'singular_values.npy'), S)
 
 print(f"\nDetailed data saved to results.json (ranked lists, histograms, percentiles, etc.)")
-print("Numpy arrays saved (norms, explained_ratio, singular_values).")
+print("Numpy arrays saved (norms, explained_ratio).")
 print("\nRun charts.py for finding visualizations, visualize.py for the UMAP interactive plot.")
