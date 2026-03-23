@@ -276,4 +276,4 @@ np.save(os.path.join(OUT, 'singular_values.npy'), S)
 
 print(f"\nDetailed data saved to results.json (ranked lists, histograms, percentiles, etc.)")
 print("Numpy arrays saved (norms, explained_ratio, singular_values).")
-print("\nRun visualize.py next for the UMAP interactive plot.")
+print("\nRun charts.py for finding visualizations, visualize.py for the UMAP interactive plot.")
