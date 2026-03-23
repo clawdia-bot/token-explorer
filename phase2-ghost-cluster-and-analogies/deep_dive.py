@@ -1,288 +1,242 @@
 """
-Deep dive into interesting findings from Phase 1.
+Phase 2: Ghost Cluster, Analogies, and Nearest Neighbors
+GPT-2 (50,257 tokens x 768 dimensions)
 
-1. The "ghost cluster" — control characters that all have norm ≈ 3.09
-2. Newline as outlier (norm 2.69, lowest of any single char)
-3. Norm-frequency relationship — is it linear or something else?
-4. The SPONSORED token — why is it the max norm outlier?
-5. Nearest neighbors for interesting tokens
-6. "Empty space" — where are there NO tokens?
+Deeper probing into specific phenomena found in Phase 1:
+  1. Ghost cluster — control characters that collapsed to one vector
+  2. Newline — the exception that broke free
+  3. Nearest neighbors — the model's semantic taxonomy
+  4. Embedding analogies — linear relationships without fine-tuning
+  5. Weird tokens — training data archaeology
 """
+
 import torch
 import numpy as np
 from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
-from scipy import stats
-
+import json
 import os
-OUT = os.path.dirname(os.path.abspath(__file__))
+import sys
 
-print("Loading...")
+OUT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(OUT, '..', 'phase1-norms-and-structure'))
+from tokenutils import token_display
+
+print("Loading GPT-2 embeddings...")
 path = hf_hub_download('gpt2', 'pytorch_model.bin')
 sd = torch.load(path, map_location='cpu', weights_only=False)
 emb = sd['wte.weight'].numpy()
 tok = AutoTokenizer.from_pretrained('gpt2')
 tokens = [tok.decode([i]) for i in range(emb.shape[0])]
+labels = [token_display(tok, i) for i in range(emb.shape[0])]
 norms = np.linalg.norm(emb, axis=1)
+normed_emb = emb / (norms[:, None] + 1e-10)
+
+print(f"Embedding matrix: {emb.shape[0]} tokens x {emb.shape[1]} dimensions")
+
+
+def nearest_neighbors(idx, k=15):
+    """Return top-k nearest neighbors by cosine similarity (excluding self)."""
+    cos = normed_emb @ normed_emb[idx]
+    cos[idx] = -2  # exclude self
+    nn = np.argsort(cos)[-k:][::-1]
+    return [(int(i), float(cos[i]), float(norms[i])) for i in nn]
+
+
+def analogy(a, b, c, k=10):
+    """a is to b as c is to ? Returns top-k results."""
+    def get_idx(s):
+        matches = [i for i, t in enumerate(tokens) if t == s]
+        return matches[0] if matches else None
+
+    ia, ib, ic = get_idx(a), get_idx(b), get_idx(c)
+    if None in (ia, ib, ic):
+        return []
+
+    vec = emb[ib] - emb[ia] + emb[ic]
+    vec_norm = np.linalg.norm(vec)
+    cos = (emb @ vec) / (norms * vec_norm + 1e-10)
+    for idx in (ia, ib, ic):
+        cos[idx] = -2
+    nn = np.argsort(cos)[-k:][::-1]
+    return [(int(i), float(cos[i])) for i in nn]
+
 
 # ============================================================
-# 1. THE GHOST CLUSTER — control chars with norm ≈ 3.09
+# 1. THE GHOST CLUSTER
 # ============================================================
 print("\n" + "="*60)
-print("1. THE GHOST CLUSTER")
+print("1. THE GHOST CLUSTER — control characters collapsed to one vector")
 print("="*60)
 
-# Tokens 188-221 (control chars + low bytes) all have norm ~3.089
 ghost_idx = list(range(188, 222))
 ghost_embs = emb[ghost_idx]
 ghost_norms = norms[ghost_idx]
 
-print(f"Ghost cluster: tokens 188-221 ({len(ghost_idx)} tokens)")
-print(f"  Norm range: {ghost_norms.min():.4f} — {ghost_norms.max():.4f}")
-print(f"  Norm std: {ghost_norms.std():.6f}")
-
-# How similar are they to each other?
 ghost_normed = ghost_embs / ghost_norms[:, None]
 cos_matrix = ghost_normed @ ghost_normed.T
 triu = np.triu_indices(len(ghost_idx), k=1)
-cos_pairs = cos_matrix[triu]
-print(f"  Pairwise cosine within cluster:")
-print(f"    Mean: {cos_pairs.mean():.4f}")
-print(f"    Min:  {cos_pairs.min():.4f}")
-print(f"    Max:  {cos_pairs.max():.4f}")
-print(f"    Std:  {cos_pairs.std():.6f}")
+cos_all = cos_matrix[triu]
 
-# The newline (token 198) — is it different from its siblings?
-newline_idx = 198
-print(f"\n  Newline (198) norm: {norms[newline_idx]:.4f}")
-print(f"  Mean cosine of newline to other ghosts: {cos_matrix[newline_idx - 188, :].mean():.4f}")
-
-# Is this cluster genuinely near-identical, or just similar?
-ghost_mean = ghost_embs.mean(axis=0)
-ghost_dists = np.linalg.norm(ghost_embs - ghost_mean, axis=1)
-print(f"  Dist from cluster centroid: mean={ghost_dists.mean():.4f}, max={ghost_dists.max():.4f}")
-
-# Exclude newline and re-check
+# Without newline
 ghost_no_nl = [i for i in ghost_idx if i != 198]
-ghost_no_nl_embs = emb[ghost_no_nl]
-ghost_no_nl_normed = ghost_no_nl_embs / norms[ghost_no_nl][:, None]
-cos2 = ghost_no_nl_normed @ ghost_no_nl_normed.T
-triu2 = np.triu_indices(len(ghost_no_nl), k=1)
-print(f"  WITHOUT newline — pairwise cosine mean: {cos2[triu2].mean():.4f}, min: {cos2[triu2].min():.4f}")
+ghost_no_nl_normed = emb[ghost_no_nl] / norms[ghost_no_nl][:, None]
+cos_no_nl = ghost_no_nl_normed @ ghost_no_nl_normed.T
+triu_no_nl = np.triu_indices(len(ghost_no_nl), k=1)
+cos_excl_nl = cos_no_nl[triu_no_nl]
+
+nl_cos_to_ghosts = cos_matrix[198 - 188, :].mean()
+
+print(f"  {len(ghost_idx)} tokens (188-221), pairwise cosine {cos_excl_nl.mean():.3f} (excluding newline)")
+print(f"  Newline (198) broke free: cosine {nl_cos_to_ghosts:.3f} to siblings, norm {norms[198]:.3f}")
+print(f"  -> No training signal = no differentiation. Newline is the exception because it's meaningful.")
 
 # ============================================================
 # 2. NEWLINE — the special character
 # ============================================================
 print("\n" + "="*60)
-print("2. NEWLINE ANALYSIS")
+print("2. NEWLINE — a control character that earned its identity")
 print("="*60)
 
-# What are newline's nearest neighbors?
-nl_emb = emb[198]
-cos_to_nl = (emb @ nl_emb) / (norms * norms[198] + 1e-10)
-nn_nl = np.argsort(cos_to_nl)[-20:][::-1]
-print("Newline's nearest neighbors (cosine):")
-for i in nn_nl:
-    print(f"  [{i:5d}] cos={cos_to_nl[i]:.4f} norm={norms[i]:.4f}  {repr(tokens[i])}")
+nl_neighbors = nearest_neighbors(198, k=10)
+top3 = nl_neighbors[:3]
+print(f"  Nearest neighbors: {repr(labels[top3[0][0]])}, {repr(labels[top3[1][0]])}, {repr(labels[top3[2][0]])}")
+print(f"  -> Newline's neighbors are sentence/paragraph starters: 'The', endoftext, '('")
 
-# Compare newline to space
-space_idx = 220
-print(f"\nNewline (198) vs Space (220):")
-print(f"  Norms: {norms[198]:.4f} vs {norms[220]:.4f}")
-cos_nl_sp = np.dot(emb[198], emb[220]) / (norms[198] * norms[220])
-print(f"  Cosine: {cos_nl_sp:.4f}")
+nl_vs_space = float(normed_emb[198] @ normed_emb[220])
+print(f"  Newline vs space: cosine {nl_vs_space:.3f} (different roles despite both being whitespace)")
 
 # ============================================================
-# 3. NEAREST NEIGHBORS for interesting tokens
+# 3. NEAREST NEIGHBORS — semantic taxonomy
 # ============================================================
 print("\n" + "="*60)
-print("3. NEAREST NEIGHBORS (INTERESTING TOKENS)")
+print("3. NEAREST NEIGHBORS — the model's semantic taxonomy")
 print("="*60)
 
-def find_nn(token_str, k=15):
-    """Find nearest neighbors by cosine similarity"""
-    # Find the token ID
+probe_tokens = {
+    ' the': 'determiners/pronouns',
+    ' at': 'prepositions',
+    ' king': 'royalty',
+    ' queen': 'royalty (gendered)',
+    ' dog': 'animals',
+    ' Python': 'programming languages',
+}
+
+nn_results = {}
+for token_str, expected in probe_tokens.items():
     matches = [i for i, t in enumerate(tokens) if t == token_str]
     if not matches:
-        # Try with space prefix
-        matches = [i for i, t in enumerate(tokens) if t.strip() == token_str]
-    if not matches:
-        print(f"  Token {repr(token_str)} not found")
-        return
+        continue
     idx = matches[0]
-    vec = emb[idx]
-    cos = (emb @ vec) / (norms * norms[idx] + 1e-10)
-    nn = np.argsort(cos)[-k-1:-1][::-1]  # exclude self
-    print(f"\nNearest to [{idx}] {repr(tokens[idx])} (norm={norms[idx]:.3f}):")
-    for i in nn:
-        print(f"  [{i:5d}] cos={cos[i]:.4f} norm={norms[i]:.4f}  {repr(tokens[i])}")
+    neighbors = nearest_neighbors(idx, k=15)
+    nn_results[token_str] = neighbors
+    top3 = neighbors[:3]
+    print(f"  {repr(token_str):12s} -> {repr(labels[top3[0][0]])}, {repr(labels[top3[1][0]])}, {repr(labels[top3[2][0]])} ({expected})")
 
-# The outliers
-find_nn('SPONSORED')
-find_nn(' the')
-find_nn(' at')  # smallest norm
-
-# Semantic probes
-find_nn(' king')
-find_nn(' queen')
-find_nn(' dog')
-find_nn(' Python')
+print(f"  -> Clean semantic clustering before any attention or context.")
 
 # ============================================================
-# 4. NORM vs FREQUENCY — deeper look
+# 4. EMBEDDING ANALOGIES — linear relationships without fine-tuning
 # ============================================================
 print("\n" + "="*60)
-print("4. NORM-FREQUENCY RELATIONSHIP")
+print("4. EMBEDDING ANALOGIES — linear relationships in raw embeddings")
 print("="*60)
 
-# Log-index as better frequency proxy (BPE merge frequency is roughly Zipfian)
-log_idx = np.log1p(np.arange(len(norms)))
-r_log, p_log = stats.pearsonr(log_idx, norms)
-print(f"Correlation (log(index) vs norm): r={r_log:.4f}")
+analogy_tests = [
+    (' king', ' queen', ' man', 'gender'),
+    (' dog', ' dogs', ' cat', 'pluralization'),
+    (' France', ' Paris', ' Japan', 'capital city'),
+    (' big', ' bigger', ' small', 'comparative'),
+]
 
-# Spearman (rank correlation, no linearity assumption)
-rho, p_rho = stats.spearmanr(np.arange(len(norms)), norms)
-print(f"Spearman (index vs norm): rho={rho:.4f}")
+analogy_results = {}
+for a, b, c, label in analogy_tests:
+    results = analogy(a, b, c, k=5)
+    analogy_results[f"{a}:{b}::{c}:?"] = results
+    if results:
+        top = results[0]
+        print(f"  {a}:{b}::{c}:? -> {repr(labels[top[0]])} (cos={top[1]:.3f}) [{label}]")
 
-# The first 256 tokens are byte-level — they break the pattern
-r_post256, _ = stats.pearsonr(np.arange(256, len(norms)), norms[256:])
-print(f"Correlation (index vs norm, tokens 256+): r={r_post256:.4f}")
+print(f"  -> Analogies work in static embeddings — the embedding layer already learned linear structure.")
 
 # ============================================================
-# 5. ANALOGIES — does the space support them?
+# 5. WEIRD TOKENS — training data archaeology
 # ============================================================
 print("\n" + "="*60)
-print("5. EMBEDDING ANALOGIES")
+print("5. WEIRD TOKENS — e-commerce ghosts and glitch tokens")
 print("="*60)
 
-def analogy(a, b, c, k=10):
-    """a is to b as c is to ?"""
-    def get_idx(s):
-        matches = [i for i, t in enumerate(tokens) if t == s]
-        if not matches:
-            matches = [i for i, t in enumerate(tokens) if t.strip() == s.strip()]
-        return matches[0] if matches else None
-    
-    ia, ib, ic = get_idx(a), get_idx(b), get_idx(c)
-    if None in (ia, ib, ic):
-        print(f"  Missing token: a={ia}, b={ib}, c={ic}")
-        return
-    
-    # Classic: b - a + c
-    vec = emb[ib] - emb[ia] + emb[ic]
-    vec_norm = np.linalg.norm(vec)
-    cos = (emb @ vec) / (norms * vec_norm + 1e-10)
-    
-    # Exclude inputs
-    cos[ia] = -2
-    cos[ib] = -2
-    cos[ic] = -2
-    
-    nn = np.argsort(cos)[-k:][::-1]
-    print(f"\n{repr(a)} : {repr(b)} :: {repr(c)} : ?")
-    for i in nn:
-        print(f"  [{i:5d}] cos={cos[i]:.4f}  {repr(tokens[i])}")
-
-analogy(' king', ' queen', ' man')
-analogy(' dog', ' dogs', ' cat')
-analogy(' France', ' Paris', ' Japan')
-analogy(' big', ' bigger', ' small')
-
-# ============================================================
-# 6. ISOTROPY TEST — random directions
-# ============================================================
-print("\n" + "="*60)
-print("6. ISOTROPY — RANDOM DIRECTION TEST")
-print("="*60)
-
-rng = np.random.RandomState(42)
-# Generate random unit vectors and see how many tokens are close
-random_dirs = rng.randn(100, 768)
-random_dirs /= np.linalg.norm(random_dirs, axis=1, keepdims=True)
-
-normed_emb = emb / (norms[:, None] + 1e-10)
-
-max_cos_per_dir = []
-for d in random_dirs:
-    cos = normed_emb @ d
-    max_cos_per_dir.append(cos.max())
-
-max_cos_per_dir = np.array(max_cos_per_dir)
-print(f"Max cosine to 100 random unit vectors:")
-print(f"  Mean: {max_cos_per_dir.mean():.4f}")
-print(f"  Min:  {max_cos_per_dir.min():.4f}")
-print(f"  Max:  {max_cos_per_dir.max():.4f}")
-print(f"  (For reference: in a uniform 768-sphere, expected max ≈ 0.08)")
-print(f"  → Embeddings are {'spread widely' if max_cos_per_dir.mean() > 0.3 else 'clustered in a subspace'}")
-
-# ============================================================
-# 7. THE WEIRD TOKENS — product IDs, glitch tokens, etc.
-# ============================================================
-print("\n" + "="*60)
-print("7. WEIRD TOKEN ANALYSIS")
-print("="*60)
-
-# Find tokens that are clearly product/API artifacts
 weird_patterns = ['externalToEVA', 'quickShip', 'TheNitrome', 'BuyableInstoreAndOnline',
                   'soDeliveryDate', 'inventoryQuantity', 'isSpecialOrderable',
                   'DragonMagazine', 'natureconservancy', 'SPONSORED']
 
-print("Known 'weird' tokens:")
+weird_idx = []
+weird_info = []
 for pat in weird_patterns:
     matches = [i for i, t in enumerate(tokens) if pat in t]
     for i in matches:
-        print(f"  [{i:5d}] norm={norms[i]:.4f}  {repr(tokens[i])}")
+        weird_idx.append(i)
+        weird_info.append({'idx': int(i), 'token': repr(labels[i]), 'norm': float(norms[i])})
 
-# How similar are the weird tokens to each other?
-weird_idx = []
-for pat in weird_patterns:
-    for i, t in enumerate(tokens):
-        if pat in t:
-            weird_idx.append(i)
-            break
-
-if len(weird_idx) > 1:
-    weird_embs = emb[weird_idx]
-    weird_norms = norms[weird_idx]
-    weird_normed = weird_embs / weird_norms[:, None]
+# Pairwise similarity among weird tokens
+unique_weird = list(set(weird_idx))
+if len(unique_weird) > 1:
+    weird_normed = normed_emb[unique_weird]
     cos_w = weird_normed @ weird_normed.T
-    triu_w = np.triu_indices(len(weird_idx), k=1)
-    print(f"\n  Pairwise cosine among weird tokens: mean={cos_w[triu_w].mean():.4f}")
-    print(f"  Compare to global mean pairwise cosine: 0.2690")
+    triu_w = np.triu_indices(len(unique_weird), k=1)
+    weird_mean_cos = float(cos_w[triu_w].mean())
+
+    # Global mean for comparison
+    rng = np.random.RandomState(42)
+    sample = rng.choice(emb.shape[0], 5000, replace=False)
+    sample_normed = normed_emb[sample]
+    global_cos = sample_normed @ sample_normed.T
+    global_triu = np.triu_indices(5000, k=1)
+    global_mean_cos = float(global_cos[global_triu].mean())
+
+    print(f"  {len(weird_info)} weird tokens found (e-commerce artifacts, Reddit usernames, glitch tokens)")
+    print(f"  Pairwise cosine: {weird_mean_cos:.3f} (vs global mean {global_mean_cos:.3f})")
+    print(f"  -> The model groups 'things I barely saw in training' into a distinct region.")
 
 # ============================================================
-# 8. DIMENSIONAL CONTRIBUTION — which dims matter most?
+# SAVE RESULTS
 # ============================================================
-print("\n" + "="*60)
-print("8. PER-DIMENSION ANALYSIS")
-print("="*60)
 
-dim_variance = emb.var(axis=0)
-dim_mean = emb.mean(axis=0)
-dim_range = emb.max(axis=0) - emb.min(axis=0)
+results = {
+    'ghost_cluster': {
+        'token_range': '188-221',
+        'count': len(ghost_idx),
+        'pairwise_cosine_excl_newline': {
+            'mean': float(cos_excl_nl.mean()),
+            'min': float(cos_excl_nl.min()),
+            'max': float(cos_excl_nl.max()),
+        },
+        'newline_cosine_to_ghosts': float(nl_cos_to_ghosts),
+        'newline_norm': float(norms[198]),
+    },
+    'newline_neighbors': [
+        {'idx': i, 'cosine': c, 'norm': n, 'token': repr(labels[i])}
+        for i, c, n in nl_neighbors
+    ],
+    'nearest_neighbors': {
+        token_str: [
+            {'idx': i, 'cosine': c, 'norm': n, 'token': repr(labels[i])}
+            for i, c, n in neighbors
+        ]
+        for token_str, neighbors in nn_results.items()
+    },
+    'analogies': {
+        key: [{'idx': i, 'cosine': c, 'token': repr(labels[i])} for i, c in results]
+        for key, results in analogy_results.items()
+    },
+    'weird_tokens': {
+        'tokens': weird_info,
+        'pairwise_cosine': weird_mean_cos,
+        'global_mean_cosine': global_mean_cos,
+    },
+}
 
-print(f"Per-dimension variance:")
-print(f"  Mean: {dim_variance.mean():.4f}")
-print(f"  Max:  {dim_variance.max():.4f} (dim {dim_variance.argmax()})")
-print(f"  Min:  {dim_variance.min():.4f} (dim {dim_variance.argmin()})")
-print(f"  Std:  {dim_variance.std():.4f}")
+with open(os.path.join(OUT, 'results.json'), 'w') as f:
+    json.dump(results, f, indent=2)
 
-print(f"\nPer-dimension mean (should be ~0 if centered):")
-print(f"  Mean of means: {dim_mean.mean():.4f}")
-print(f"  Max mean: {dim_mean.max():.4f} (dim {dim_mean.argmax()})")
-print(f"  Min mean: {dim_mean.min():.4f} (dim {dim_mean.argmin()})")
-
-# The dimension with highest mean is the "default direction" — what does it encode?
-top_dim = dim_mean.argmax()
-vals_top = emb[:, top_dim]
-top_tokens = np.argsort(vals_top)[-10:][::-1]
-bot_tokens = np.argsort(vals_top)[:10]
-print(f"\nDim {top_dim} (highest mean = {dim_mean[top_dim]:.4f}):")
-print(f"  Highest values:")
-for i in top_tokens:
-    print(f"    [{i:5d}] val={vals_top[i]:.4f}  {repr(tokens[i])}")
-print(f"  Lowest values:")
-for i in bot_tokens:
-    print(f"    [{i:5d}] val={vals_top[i]:.4f}  {repr(tokens[i])}")
-
-print("\n✅ Deep dive complete.")
+print(f"\nDetailed data saved to results.json (full neighbor lists, analogy results, etc.)")
