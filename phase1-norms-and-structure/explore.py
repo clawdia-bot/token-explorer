@@ -7,6 +7,7 @@ import torch
 import numpy as np
 from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
+from scipy import stats
 import json
 import os
 import sys
@@ -27,48 +28,63 @@ print(f"Embedding matrix: {emb.shape[0]} tokens x {emb.shape[1]} dimensions ({em
 tokens = [tok.decode([i]) for i in range(emb.shape[0])]
 labels = [token_display(tok, i) for i in range(emb.shape[0])]
 
+# Precompute shared quantities
+norms = np.linalg.norm(emb, axis=1)
+mean_emb = emb.mean(axis=0)
+mean_norm = np.linalg.norm(mean_emb)
+lengths = np.array([len(t) for t in tokens])
+
 # ============================================================
-# 1. NORMS
+# 1. NORMS AND FREQUENCY
 # ============================================================
 print("\n" + "="*60)
-print("1. L2 NORMS — frequency writes itself into geometry")
+print("1. NORMS AND FREQUENCY — rarity writes itself into geometry")
 print("="*60)
 
-norms = np.linalg.norm(emb, axis=1)
 smallest = np.argsort(norms)[:20]
 largest = np.argsort(norms)[-20:][::-1]
 hist_counts, hist_edges = np.histogram(norms, bins=50)
 
+r_idx, p_idx = stats.pearsonr(np.arange(len(norms)), norms)
+r_len, p_len = stats.pearsonr(lengths, norms)
+
+print(f"  BPE index vs norm correlation: r={r_idx:.3f} (p={p_idx:.2e})")
 print(f"  Norms: mean={norms.mean():.3f} +/- {norms.std():.3f}, range [{norms.min():.3f}, {norms.max():.3f}]")
 print(f"  Smallest: {repr(labels[smallest[0]])} ({norms[smallest[0]]:.3f}) — common preposition")
 print(f"  Largest:  {repr(labels[largest[0]])} ({norms[largest[0]]:.3f}) — rare label")
-print(f"  -> Common tokens cluster near origin; rare tokens orbit the periphery.")
+print(f"  Token length vs norm: r={r_len:.3f} (shorter tokens tend toward higher frequency)")
+print(f"  -> The model pushes common tokens toward the origin; rare tokens orbit the periphery.")
 
 # ============================================================
-# 2. THE ORIGIN — what's near it?
+# 2. ANISOTROPY
 # ============================================================
 print("\n" + "="*60)
-print("2. THE ORIGIN — the centroid of token space")
+print("2. ANISOTROPY — do embeddings point the same direction?")
 print("="*60)
 
-mean_emb = emb.mean(axis=0)
-mean_norm = np.linalg.norm(mean_emb)
+rng = np.random.RandomState(42)
+n_sample = 5000
+idx = rng.choice(emb.shape[0], n_sample, replace=False)
+sample = emb[idx]
+sample_norms = norms[idx]
 
-dists_to_mean = np.linalg.norm(emb - mean_emb, axis=1)
-closest_to_mean = np.argsort(dists_to_mean)[:20]
+sample_normed = sample / (sample_norms[:, None] + 1e-10)
 
-cos_to_mean = (emb @ mean_emb) / (norms * mean_norm + 1e-10)
+cos_matrix = sample_normed @ sample_normed.T
+triu_idx = np.triu_indices(n_sample, k=1)
+cos_pairs = cos_matrix[triu_idx]
 
-print(f"  Mean embedding norm: {mean_norm:.3f} (individual token avg: {norms.mean():.3f})")
-print(f"  Closest to mean: {repr(labels[closest_to_mean[0]])}, {repr(labels[closest_to_mean[1]])}, {repr(labels[closest_to_mean[2]])}")
-print(f"  Lowest cosine to mean: {repr(labels[cos_to_mean.argmin()])} ({cos_to_mean.min():.3f})")
-print(f"  -> 'the' is so common the model gave it a direction shared by nothing else.")
+cos_hist, cos_edges = np.histogram(cos_pairs, bins=50)
+
+print(f"  Mean pairwise cosine: {cos_pairs.mean():.3f} +/- {cos_pairs.std():.3f} ({n_sample} random tokens)")
+print(f"  -> Moderately anisotropic (0 = isotropic sphere, >0.5 = narrow cone).")
+print(f"  -> Embeddings favor the same hemisphere but aren't degenerate.")
 
 # ============================================================
 # 3. EFFECTIVE DIMENSIONALITY (PCA)
 # ============================================================
 print("\n" + "="*60)
-print("3. EFFECTIVE DIMENSIONALITY — how much space is used?")
+print("3. EFFECTIVE DIMENSIONALITY — how much space is actually used?")
 print("="*60)
 
 emb_centered = emb - mean_emb
@@ -92,35 +108,28 @@ print(f"  Participation ratio: {pr:.0f} / {emb.shape[1]} dims")
 print(f"  Entropy-based effective dims: {eff_dim_entropy:.0f} / {emb.shape[1]}")
 print(f"  Variance thresholds: 50% at {thresholds[0.5]} dims, 90% at {thresholds[0.9]}, 99% at {thresholds[0.99]}")
 print(f"  PC1 explains just {explained_ratio[0]*100:.2f}% — no single dimension dominates.")
-print(f"  -> The space genuinely uses most of its {emb.shape[1]} dimensions.")
+print(f"  -> Despite the anisotropy, the space genuinely uses most of its {emb.shape[1]} dimensions.")
 
 # ============================================================
-# 4. ANISOTROPY
+# 4. THE ORIGIN
 # ============================================================
 print("\n" + "="*60)
-print("4. ANISOTROPY — do embeddings point the same direction?")
+print("4. THE ORIGIN — the centroid of token space")
 print("="*60)
 
-rng = np.random.RandomState(42)
-n_sample = 5000
-idx = rng.choice(emb.shape[0], n_sample, replace=False)
-sample = emb[idx]
-sample_norms = norms[idx]
+dists_to_mean = np.linalg.norm(emb - mean_emb, axis=1)
+closest_to_mean = np.argsort(dists_to_mean)[:20]
 
-sample_normed = sample / (sample_norms[:, None] + 1e-10)
+cos_to_mean = (emb @ mean_emb) / (norms * mean_norm + 1e-10)
 
-cos_matrix = sample_normed @ sample_normed.T
-triu_idx = np.triu_indices(n_sample, k=1)
-cos_pairs = cos_matrix[triu_idx]
-
-cos_hist, cos_edges = np.histogram(cos_pairs, bins=50)
-
-print(f"  Mean pairwise cosine: {cos_pairs.mean():.3f} +/- {cos_pairs.std():.3f} ({n_sample} random tokens)")
-print(f"  -> Moderately anisotropic (0 = isotropic sphere, >0.5 = narrow cone).")
-print(f"  -> Embeddings favor the same hemisphere but aren't degenerate.")
+print(f"  Mean embedding norm: {mean_norm:.3f} (individual token avg: {norms.mean():.3f})")
+print(f"  Closest to mean: {repr(labels[closest_to_mean[0]])}, {repr(labels[closest_to_mean[1]])}, {repr(labels[closest_to_mean[2]])}")
+min_cos_idx = int(cos_to_mean.argmin())
+print(f"  Most directionally unique: {repr(labels[min_cos_idx])} (cosine to mean={cos_to_mean.min():.3f})")
+print(f"  -> {repr(labels[min_cos_idx])} is more directionally distinct from the average token than any other.")
 
 # ============================================================
-# 5. TOKEN CATEGORIES & CLUSTERS
+# 5. TOKEN CATEGORIES
 # ============================================================
 print("\n" + "="*60)
 print("5. TOKEN CATEGORIES — script and type clustering")
@@ -153,37 +162,9 @@ for i, c1 in enumerate(cat_names):
         cos = float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-10))
         inter_cat_cosines.append({'cat1': c1, 'cat2': c2, 'cosine': cos})
 
-notable = [x for x in inter_cat_cosines if abs(x['cosine']) > 0.5]
-if notable:
-    top = max(notable, key=lambda x: abs(x['cosine']))
-    print(f"  Most aligned categories: {top['cat1']} x {top['cat2']} (cosine={top['cosine']:.3f})")
-
-# ============================================================
-# 6. TOKEN LENGTH ANALYSIS
-# ============================================================
-print("\n" + "="*60)
-print("6. TOKEN LENGTH — shorter tokens have higher norms")
-print("="*60)
-
-lengths = np.array([len(t) for t in tokens])
-
-from scipy import stats
-r, p_val = stats.pearsonr(lengths, norms)
-
-print(f"  Length range: {lengths.min()}-{lengths.max()} chars (mean={lengths.mean():.1f})")
-print(f"  Pearson correlation (length vs norm): r={r:.3f}, p={p_val:.2e}")
-print(f"  -> Shorter tokens tend to have higher norms, consistent with the frequency effect.")
-
-# ============================================================
-# 7. FREQUENCY vs NORM (using token index as rough proxy)
-# ============================================================
-print("\n" + "="*60)
-print("7. FREQUENCY PROXY — BPE index tracks norm")
-print("="*60)
-
-r_idx, p_idx = stats.pearsonr(np.arange(len(norms)), norms)
-print(f"  Correlation (token index vs norm): r={r_idx:.3f}, p={p_idx:.2e}")
-print(f"  -> Lower BPE merge index ~ higher frequency. Norm grows with rarity.")
+if inter_cat_cosines:
+    most_distant = min(inter_cat_cosines, key=lambda x: x['cosine'])
+    print(f"  Most distant categories: {most_distant['cat1']} x {most_distant['cat2']} (cosine={most_distant['cosine']:.3f})")
 
 # ============================================================
 # SAVE RESULTS
@@ -275,7 +256,7 @@ results = {
     'inter_category_cosines': inter_cat_cosines,
     'token_length': {
         'min': int(lengths.min()), 'max': int(lengths.max()), 'mean': float(lengths.mean()),
-        'pearson_r': float(r), 'pearson_p': float(p_val),
+        'pearson_r': float(r_len), 'pearson_p': float(p_len),
         'per_length': per_length,
         'single_char_tokens': single_char_tokens,
     },
