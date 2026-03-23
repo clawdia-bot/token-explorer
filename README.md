@@ -57,18 +57,8 @@ Each phase directory contains:
 
 ## Requirements
 
-```
-torch
-transformers
-numpy
-scipy
-scikit-learn
-plotly
-umap-learn
-```
-
 ```bash
-pip install torch transformers numpy scipy scikit-learn plotly umap-learn
+poetry install
 ```
 
 ## Models Used

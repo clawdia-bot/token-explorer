@@ -1,7 +1,0 @@
-torch
-transformers
-numpy
-scipy
-scikit-learn
-plotly
-umap-learn
