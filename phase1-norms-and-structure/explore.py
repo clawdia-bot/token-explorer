@@ -111,22 +111,36 @@ print(f"  PC1 explains just {explained_ratio[0]*100:.2f}% — no single dimensio
 print(f"  -> Despite the anisotropy, the space genuinely uses most of its {emb.shape[1]} dimensions.")
 
 # ============================================================
-# 4. THE ORIGIN
+# 4. ORIGIN vs CENTROID — is the frequency-norm relationship real?
 # ============================================================
 print("\n" + "="*60)
-print("4. THE ORIGIN — the centroid of token space")
+print("4. ORIGIN vs CENTROID — is the frequency-norm relationship real?")
 print("="*60)
 
 dists_to_mean = np.linalg.norm(emb - mean_emb, axis=1)
+dist_hist_counts, dist_hist_edges = np.histogram(dists_to_mean, bins=50)
 closest_to_mean = np.argsort(dists_to_mean)[:20]
+farthest_from_mean = np.argsort(dists_to_mean)[-1]
 
 cos_to_mean = (emb @ mean_emb) / (norms * mean_norm + 1e-10)
 
-print(f"  Mean embedding norm: {mean_norm:.3f} (individual token avg: {norms.mean():.3f})")
-print(f"  Closest to mean: {repr(labels[closest_to_mean[0]])}, {repr(labels[closest_to_mean[1]])}, {repr(labels[closest_to_mean[2]])}")
+# Same correlations, but measured from centroid instead of origin
+r_idx_centered, p_idx_centered = stats.pearsonr(np.arange(len(dists_to_mean)), dists_to_mean)
+r_len_centered, p_len_centered = stats.pearsonr(lengths, dists_to_mean)
+
+print(f"  From origin:   BPE index vs norm r={r_idx:.3f}, token length vs norm r={r_len:.3f}")
+print(f"  From centroid: BPE index vs dist r={r_idx_centered:.3f}, token length vs dist r={r_len_centered:.3f}")
+print(f"  Closest to centroid: {repr(labels[closest_to_mean[0]])} (dist={dists_to_mean[closest_to_mean[0]]:.3f})")
+print(f"  Farthest from centroid: {repr(labels[farthest_from_mean])} (dist={dists_to_mean[farthest_from_mean]:.3f})")
 min_cos_idx = int(cos_to_mean.argmin())
 print(f"  Most directionally unique: {repr(labels[min_cos_idx])} (cosine to mean={cos_to_mean.min():.3f})")
-print(f"  -> {repr(labels[min_cos_idx])} is more directionally distinct from the average token than any other.")
+
+# Data-driven conclusion
+if abs(r_idx_centered) > abs(r_idx) * 0.5:
+    print(f"  -> Frequency-distance holds from both reference points. The radial structure is real.")
+else:
+    print(f"  -> Correlation weakens significantly from centroid. The origin-based finding is partly")
+    print(f"     an artifact of centroid displacement — common tokens pull the mean toward them.")
 
 # ============================================================
 # 5. TOKEN CATEGORIES
@@ -229,6 +243,13 @@ results = {
             'max_token': repr(labels[cos_to_mean.argmax()]),
         },
     },
+    'centroid': {
+        'r_idx': float(r_idx_centered), 'p_idx': float(p_idx_centered),
+        'r_len': float(r_len_centered), 'p_len': float(p_len_centered),
+        'closest': {'idx': int(closest_to_mean[0]), 'dist': float(dists_to_mean[closest_to_mean[0]]), 'token': repr(labels[closest_to_mean[0]])},
+        'farthest': {'idx': int(farthest_from_mean), 'dist': float(dists_to_mean[farthest_from_mean]), 'token': repr(labels[farthest_from_mean])},
+        'histogram': {'counts': dist_hist_counts.tolist(), 'edges': dist_hist_edges.tolist()},
+    },
     'pca': {
         'total_variance': float(total_var),
         'participation_ratio': float(pr),
@@ -271,6 +292,7 @@ with open(os.path.join(OUT, 'results.json'), 'w') as f:
 
 # Save data for visualization
 np.save(os.path.join(OUT, 'norms.npy'), norms)
+np.save(os.path.join(OUT, 'dists_to_mean.npy'), dists_to_mean)
 np.save(os.path.join(OUT, 'explained_ratio.npy'), explained_ratio)
 np.save(os.path.join(OUT, 'singular_values.npy'), S)
 

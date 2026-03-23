@@ -27,7 +27,7 @@ cumulative = np.cumsum(explained_ratio)
 fig = make_subplots(
     rows=2, cols=2,
     subplot_titles=[
-        'Token Norm Distribution',
+        'Distance from Origin vs Centroid',
         'Cumulative Variance Explained (PCA)',
         'Pairwise Cosine Similarity (Anisotropy)',
         'Mean Norm by Token Category',
@@ -44,29 +44,38 @@ counts = norm_hist['counts']
 centers = [(edges[i] + edges[i+1]) / 2 for i in range(len(counts))]
 widths = [edges[i+1] - edges[i] for i in range(len(counts))]
 
+# Normalize both histograms to density so they're comparable despite different scales
+origin_total = sum(counts)
+origin_density = [c / (origin_total * widths[i]) for i, c in enumerate(counts)]
+
+dist_hist = results['centroid']['histogram']
+dist_edges = dist_hist['edges']
+dist_counts = dist_hist['counts']
+dist_centers = [(dist_edges[i] + dist_edges[i+1]) / 2 for i in range(len(dist_counts))]
+dist_widths = [dist_edges[i+1] - dist_edges[i] for i in range(len(dist_counts))]
+dist_total = sum(dist_counts)
+dist_density = [c / (dist_total * dist_widths[i]) for i, c in enumerate(dist_counts)]
+
 fig.add_trace(go.Bar(
-    x=centers, y=counts, width=widths,
-    marker_color='#4285f4', opacity=0.85,
-    name='Tokens',
-    showlegend=False,
+    x=centers, y=origin_density, width=widths,
+    marker_color='#4285f4', opacity=0.6,
+    name='From origin',
+    showlegend=True,
+    legendgroup='panel1',
 ), row=1, col=1)
 
-# Annotate min/max tokens
-fig.add_annotation(
-    x=results['norms']['min'], y=max(counts) * 0.9,
-    text=f"{results['norms']['min_token']}<br>({results['norms']['min']:.2f})",
-    showarrow=True, arrowhead=2, ax=-60, ay=-30,
-    font=dict(size=10), row=1, col=1,
-)
-fig.add_annotation(
-    x=results['norms']['max'], y=max(counts) * 0.5,
-    text=f"{results['norms']['max_token']}<br>({results['norms']['max']:.2f})",
-    showarrow=True, arrowhead=2, ax=-60, ay=-30,
-    font=dict(size=10), row=1, col=1,
-)
+fig.add_trace(go.Bar(
+    x=dist_centers, y=dist_density, width=dist_widths,
+    marker_color='#ff9800', opacity=0.6,
+    name='From centroid',
+    showlegend=True,
+    legendgroup='panel1',
+), row=1, col=1)
 
-fig.update_xaxes(title_text='L2 Norm', row=1, col=1)
-fig.update_yaxes(title_text='Token Count', row=1, col=1)
+fig.update_layout(barmode='overlay')
+
+fig.update_xaxes(title_text='Distance', row=1, col=1)
+fig.update_yaxes(title_text='Density', row=1, col=1)
 
 # ── Panel 2: Cumulative variance ──────────────────────────────
 components = np.arange(1, len(cumulative) + 1)
@@ -80,13 +89,13 @@ fig.add_trace(go.Scatter(
 
 # Threshold markers
 thresholds = results['pca']['threshold_components']
-for pct, label in [('0.5', '50%'), ('0.9', '90%'), ('0.99', '99%')]:
+for pct, label, tpos in [('0.5', '50%', 'bottom right'), ('0.9', '90%', 'top left'), ('0.99', '99%', 'top left')]:
     k = thresholds[pct]
     fig.add_trace(go.Scatter(
         x=[k], y=[float(pct) * 100],
         mode='markers+text',
         marker=dict(size=10, color='#fbbc04', symbol='diamond'),
-        text=[f'{label} at {k}'], textposition='top right',
+        text=[f'{label} at {k}'], textposition=tpos,
         textfont=dict(size=10),
         showlegend=False,
     ), row=1, col=2)
@@ -141,10 +150,9 @@ cat_counts = [c[1]['count'] for c in sorted_cats]
 fig.add_trace(go.Bar(
     y=cat_names, x=cat_means,
     orientation='h',
-    error_x=dict(type='data', array=cat_stds, visible=True, thickness=1.5),
     marker_color='#ea4335', opacity=0.85,
     text=[f'n={c:,}' for c in cat_counts],
-    textposition='outside', textfont_size=9,
+    textposition='inside', textfont=dict(size=9, color='white'),
     name='Categories',
     showlegend=False,
 ), row=2, col=2)
@@ -154,7 +162,7 @@ fig.update_xaxes(title_text='Mean L2 Norm', row=2, col=2)
 # ── Layout ────────────────────────────────────────────────────
 fig.update_layout(
     title='GPT-2 Token Embedding Space — Phase 1 Findings',
-    width=1400, height=900,
+    width=1400, height=800,
     template='plotly_dark',
 )
 
