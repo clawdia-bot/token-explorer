@@ -239,4 +239,41 @@ results = {
 with open(os.path.join(OUT, 'results.json'), 'w') as f:
     json.dump(results, f, indent=2)
 
-print(f"\nDetailed data saved to results.json (full neighbor lists, analogy results, etc.)")
+# Save data for visualizations
+np.save(os.path.join(OUT, 'ghost_cosine_matrix.npy'), cos_matrix)
+ghost_labels = [labels[i] for i in ghost_idx]
+with open(os.path.join(OUT, 'ghost_labels.json'), 'w') as f:
+    json.dump(ghost_labels, f)
+
+# Save analogy token embeddings for PCA projection
+analogy_data = {}
+for a, b, c, label in analogy_tests:
+    def get_idx(s):
+        return next((i for i, t in enumerate(tokens) if t == s), None)
+    ia, ib, ic = get_idx(a), get_idx(b), get_idx(c)
+    top_result = analogy_results[f"{a}:{b}::{c}:?"]
+    id_idx = top_result[0][0] if top_result else None
+    if None not in (ia, ib, ic, id_idx):
+        analogy_data[label] = {
+            'indices': [int(ia), int(ib), int(ic), int(id_idx)],
+            'labels': [labels[ia], labels[ib], labels[ic], labels[id_idx]],
+            'vectors': [emb[ia].tolist(), emb[ib].tolist(), emb[ic].tolist(), emb[id_idx].tolist()],
+        }
+with open(os.path.join(OUT, 'analogy_vectors.json'), 'w') as f:
+    json.dump(analogy_data, f)
+
+# Save nearest neighbor embeddings for radial graphs
+nn_viz_data = {}
+for token_str, neighbors in nn_results.items():
+    matches = [i for i, t in enumerate(tokens) if t == token_str]
+    if matches:
+        center_idx = matches[0]
+        nn_viz_data[token_str] = {
+            'center': {'idx': int(center_idx), 'label': labels[center_idx]},
+            'neighbors': [{'idx': i, 'cosine': c, 'label': labels[i]} for i, c, _ in neighbors[:5]],
+        }
+with open(os.path.join(OUT, 'nn_viz_data.json'), 'w') as f:
+    json.dump(nn_viz_data, f)
+
+print(f"\nDetailed data saved to results.json and visualization data files.")
+print("Run charts.py for visualizations.")
