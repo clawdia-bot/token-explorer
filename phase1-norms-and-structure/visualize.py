@@ -8,68 +8,26 @@ from transformers import AutoTokenizer
 import json
 
 import os
+import sys
+
 OUT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, OUT)
+from tokenutils import token_display, categorize
 
 print("Loading embeddings...")
 path = hf_hub_download('gpt2', 'pytorch_model.bin')
 sd = torch.load(path, map_location='cpu', weights_only=False)
 emb = sd['wte.weight'].numpy()
 tok = AutoTokenizer.from_pretrained('gpt2')
-tokens = [tok.decode([i]) for i in range(emb.shape[0])]
+labels = [token_display(tok, i) for i in range(emb.shape[0])]
 norms = np.linalg.norm(emb, axis=1)
 
-# Categorize tokens more richly
-def categorize(t, idx):
-    t_stripped = t.strip()
-    # Space-prefixed tokens in GPT-2 use Ġ in the raw vocab
-    raw = tok.convert_ids_to_tokens(idx)
-    has_space = raw.startswith('Ġ') if raw else False
-    
-    if idx < 256 and all(ord(c) < 128 or ord(c) == 65533 for c in t):
-        if ord(t[0]) < 32 or ord(t[0]) == 127 if len(t) == 1 else False:
-            return 'control_char'
-        if len(t) == 1 and 128 <= idx <= 187:
-            return 'byte_token'
-    
-    if t_stripped == '':
-        return 'whitespace'
-    if t_stripped.isdigit():
-        return 'number'
-    if all(c in '.,;:!?-—–()[]{}"\'/\\@#$%^&*~`|<>+=_' for c in t_stripped):
-        return 'punctuation'
-    
-    # Check for non-Latin scripts
-    for c in t_stripped:
-        if '\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff':
-            return 'japanese'
-        if '\u4e00' <= c <= '\u9fff':
-            return 'cjk'
-        if '\u0400' <= c <= '\u04ff':
-            return 'cyrillic'
-        if '\u0600' <= c <= '\u06ff':
-            return 'arabic'
-        if '\u0590' <= c <= '\u05ff':
-            return 'hebrew'
-        if '\u0370' <= c <= '\u03ff':
-            return 'greek'
-        if '\uac00' <= c <= '\ud7af':
-            return 'korean'
-    
-    if has_space and t_stripped.isalpha():
-        return 'word'
-    if t_stripped.isalpha() and t_stripped == t_stripped.upper() and len(t_stripped) > 1:
-        return 'allcaps'
-    if t_stripped.isalpha():
-        return 'alpha_fragment'
-    
-    return 'other'
-
-categories = [categorize(t, i) for i, t in enumerate(tokens)]
+categories = [categorize(tok, i) for i in range(emb.shape[0])]
 
 print("Running UMAP...")
 from umap import UMAP
 
-reducer = UMAP(n_components=2, n_neighbors=30, min_dist=0.1, metric='cosine', random_state=42, verbose=True)
+reducer = UMAP(n_components=2, n_neighbors=30, min_dist=0.1, metric='cosine', random_state=42, verbose=False)
 coords = reducer.fit_transform(emb)
 
 print("Building plotly figure...")
@@ -99,7 +57,7 @@ fig = go.Figure()
 
 for cat in sorted(set(categories)):
     mask = [i for i, c in enumerate(categories) if c == cat]
-    hover_text = [f"[{i}] {repr(tokens[i])}<br>norm={norms[i]:.3f}<br>cat={cat}" for i in mask]
+    hover_text = [f"[{i}] {repr(labels[i])}<br>norm={norms[i]:.3f}<br>cat={cat}" for i in mask]
     fig.add_trace(go.Scattergl(
         x=coords[mask, 0],
         y=coords[mask, 1],
