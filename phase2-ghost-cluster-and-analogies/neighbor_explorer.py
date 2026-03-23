@@ -49,14 +49,32 @@ def find_token(query):
     return None
 
 
-def get_neighbors(query, k=15):
+def get_neighbors(query, k=15, dedup=True):
     idx = find_token(query)
     if idx is None:
         return {'error': f"Token not found: {query}"}
 
     cos = normed_emb @ normed_emb[idx]
     cos[idx] = -2
-    nn = np.argsort(cos)[-k:][::-1]
+    nn = np.argsort(cos)[-(k * 5):][::-1]
+
+    neighbors = []
+    seen = set()
+    for i in nn:
+        entry = {
+            'token': labels[int(i)],
+            'cosine': round(float(cos[i]), 4),
+            'norm': round(float(norms[int(i)]), 4),
+            'idx': int(i),
+        }
+        if dedup:
+            key = labels[int(i)].strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+        neighbors.append(entry)
+        if len(neighbors) >= k:
+            break
 
     return {
         'center': {
@@ -64,15 +82,7 @@ def get_neighbors(query, k=15):
             'idx': int(idx),
             'norm': round(float(norms[idx]), 4),
         },
-        'neighbors': [
-            {
-                'token': labels[int(i)],
-                'cosine': round(float(cos[i]), 4),
-                'norm': round(float(norms[int(i)]), 4),
-                'idx': int(i),
-            }
-            for i in nn
-        ],
+        'neighbors': neighbors,
     }
 
 
@@ -143,6 +153,9 @@ HTML_PAGE = """<!DOCTYPE html>
   <div class="search-row">
     <input type="text" id="query" placeholder="type a token..." value="king">
     <button onclick="search()">Search</button>
+    <label style="color:#999; font-size:13px; cursor:pointer;">
+      <input id="dedup" type="checkbox" checked style="vertical-align:middle; cursor:pointer;"> collapse variants
+    </label>
   </div>
   <p class="help">Tokens are space-prefixed in GPT-2, so "king" matches " king". Press Enter to search.</p>
 
@@ -183,7 +196,8 @@ HTML_PAGE = """<!DOCTYPE html>
       centerEl.innerHTML = '';
       resultsEl.innerHTML = '<div style="color:#666; text-align:center;">searching...</div>';
 
-      var resp = await fetch('/search?q=' + encodeURIComponent(query));
+      var dedup = document.getElementById('dedup').checked ? '1' : '0';
+      var resp = await fetch('/search?q=' + encodeURIComponent(query) + '&dedup=' + dedup);
       var data = await resp.json();
 
       if (data.error) {
@@ -233,7 +247,8 @@ class NeighborHandler(BaseHTTPRequestHandler):
         if parsed.path == '/search':
             params = parse_qs(parsed.query)
             q = params.get('q', [''])[0]
-            result = get_neighbors(q)
+            dedup = params.get('dedup', ['1'])[0] == '1'
+            result = get_neighbors(q, dedup=dedup)
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()

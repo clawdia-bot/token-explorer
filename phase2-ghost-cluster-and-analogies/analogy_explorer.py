@@ -52,7 +52,7 @@ def find_token(query):
     return None
 
 
-def solve_analogy(a_str, b_str, c_str, k=10):
+def solve_analogy(a_str, b_str, c_str, k=10, dedup=True):
     """a is to b as c is to ? Returns top-k results."""
     ia = find_token(a_str)
     ib = find_token(b_str)
@@ -71,15 +71,27 @@ def solve_analogy(a_str, b_str, c_str, k=10):
     for idx in (ia, ib, ic):
         cos[idx] = -2
 
-    nn = np.argsort(cos)[-k:][::-1]
+    # Get more candidates than needed, then deduplicate
+    nn = np.argsort(cos)[-(k * 5):][::-1]
+
+    results = []
+    seen = set()
+    for i in nn:
+        entry = {'token': labels[int(i)], 'cosine': round(float(cos[i]), 4), 'idx': int(i)}
+        if dedup:
+            key = labels[int(i)].strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+        results.append(entry)
+        if len(results) >= k:
+            break
+
     return {
         'a': {'token': labels[ia], 'idx': int(ia)},
         'b': {'token': labels[ib], 'idx': int(ib)},
         'c': {'token': labels[ic], 'idx': int(ic)},
-        'results': [
-            {'token': labels[int(i)], 'cosine': round(float(cos[i]), 4), 'idx': int(i)}
-            for i in nn
-        ],
+        'results': results,
     }
 
 
@@ -161,7 +173,12 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="result-box empty" id="result">?</div>
   </div>
 
-  <button onclick="solve()">Solve</button>
+  <div style="display:flex; align-items:center; gap:16px;">
+    <button onclick="solve()">Solve</button>
+    <label style="color:#999; font-size:13px; cursor:pointer;">
+      <input id="dedup" type="checkbox" checked style="vertical-align:middle; cursor:pointer;"> collapse variants
+    </label>
+  </div>
   <p class="help">Tokens are space-prefixed in GPT-2, so "king" matches " king". Press Enter in any field to solve.</p>
 
   <div class="presets">
@@ -200,7 +217,8 @@ HTML_PAGE = """<!DOCTYPE html>
       resultEl.textContent = '...';
       resultEl.className = 'result-box empty';
 
-      var resp = await fetch('/solve?a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b) + '&c=' + encodeURIComponent(c));
+      var dedup = document.getElementById('dedup').checked ? '1' : '0';
+      var resp = await fetch('/solve?a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b) + '&c=' + encodeURIComponent(c) + '&dedup=' + dedup);
       var data = await resp.json();
 
       if (data.error) {
@@ -249,7 +267,8 @@ class AnalogyHandler(BaseHTTPRequestHandler):
             a = params.get('a', [''])[0]
             b = params.get('b', [''])[0]
             c = params.get('c', [''])[0]
-            result = solve_analogy(a, b, c)
+            dedup = params.get('dedup', ['1'])[0] == '1'
+            result = solve_analogy(a, b, c, dedup=dedup)
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
