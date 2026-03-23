@@ -239,11 +239,17 @@ results = {
 with open(os.path.join(OUT, 'results.json'), 'w') as f:
     json.dump(results, f, indent=2)
 
-# Save data for visualizations
-np.save(os.path.join(OUT, 'ghost_cosine_matrix.npy'), cos_matrix)
-ghost_labels = [labels[i] for i in ghost_idx]
+# Save data for visualizations — expanded ghost matrix with reference tokens
+ref_tokens = {' the': 262, ' dog': 3290, '\n\n': 628, ' Python': 11361}
+expanded_idx = ghost_idx + list(ref_tokens.values())
+expanded_embs = emb[expanded_idx]
+expanded_norms = norms[expanded_idx]
+expanded_normed = expanded_embs / (expanded_norms[:, None] + 1e-10)
+expanded_cos = expanded_normed @ expanded_normed.T
+np.save(os.path.join(OUT, 'ghost_cosine_matrix.npy'), expanded_cos)
+expanded_labels = [labels[i] for i in ghost_idx] + list(ref_tokens.keys())
 with open(os.path.join(OUT, 'ghost_labels.json'), 'w') as f:
-    json.dump(ghost_labels, f)
+    json.dump(expanded_labels, f)
 
 # Save analogy token embeddings for PCA projection
 analogy_data = {}
