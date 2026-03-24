@@ -6,40 +6,64 @@ For interactive exploration, use:
   - neighbor_explorer.py (nearest neighbors, localhost:8766)
 
 Reads precomputed data from deep_dive.py — no model loading required.
+
+Usage: poetry run python phase2-ghost-cluster-and-analogies/charts.py [--model MODEL]
 """
 
+import argparse
 import plotly.graph_objects as go
 import json
 import numpy as np
 from pathlib import Path
 
-OUT = Path(__file__).parent
+parser = argparse.ArgumentParser(description="Phase 2: Ghost cluster heatmap")
+parser.add_argument('--model', default='gpt2', help="Model slug (must have run deep_dive.py first)")
+args = parser.parse_args()
+
+BASE = Path(__file__).parent / 'results' / args.model
+if not BASE.exists():
+    raise FileNotFoundError(f"No results for '{args.model}' — run deep_dive.py --model {args.model} first")
 
 # ── Load data ─────────────────────────────────────────────────
-cos_matrix = np.load(OUT / 'ghost_cosine_matrix.npy')
-with open(OUT / 'ghost_labels.json') as f:
-    ghost_labels = json.load(f)
+cos_matrix_path = BASE / 'ghost_cosine_matrix.npy'
+labels_path = BASE / 'ghost_labels.json'
+
+if not cos_matrix_path.exists():
+    print(f"No ghost cluster data for '{args.model}' — model may not have a ghost cluster.")
+    exit(0)
+
+cos_matrix = np.load(cos_matrix_path)
+with open(labels_path) as f:
+    ghost_data = json.load(f)
+
+# New format has {labels, n_ghost}; handle both formats
+if isinstance(ghost_data, dict):
+    ghost_labels = ghost_data['labels']
+    n_ghost = ghost_data['n_ghost']
+else:
+    # Legacy format: plain list
+    ghost_labels = ghost_data
+    n_ghost = len(ghost_labels) - 4  # old format had 4 reference tokens appended
+
+# Load model name from results.json if available
+model_name = args.model
+results_path = BASE / 'results.json'
+if results_path.exists():
+    with open(results_path) as f:
+        results = json.load(f)
+    model_name = results.get('model', {}).get('name', args.model)
 
 # ══════════════════════════════════════════════════════════════
 # Ghost Cluster Heatmap (with reference tokens)
 # ══════════════════════════════════════════════════════════════
 
-# Clean up labels for display
-# First 34 are ghost cluster (188-221), rest are reference tokens
-n_ghost = 34
 display_labels = []
 for i, label in enumerate(ghost_labels):
     if i < n_ghost:
-        idx = 188 + i
-        if idx == 198:
-            display_labels.append(f'\\n ({idx})')
-        elif idx == 220:
-            display_labels.append(f'space ({idx})')
-        else:
-            short = repr(label).strip("'")
-            if len(short) > 10:
-                short = short[:8] + '..'
-            display_labels.append(f'{short} ({idx})')
+        short = repr(label).strip("'")
+        if len(short) > 10:
+            short = short[:8] + '..'
+        display_labels.append(f'{short} ({i})')
     else:
         # Reference tokens — highlight with star prefix
         display_labels.append(f'* {label}')
@@ -66,12 +90,13 @@ fig.add_hline(y=n_ghost - 0.5, line=dict(color='#34a853', width=2))
 fig.add_vline(x=n_ghost - 0.5, line=dict(color='#34a853', width=2))
 
 fig.update_layout(
-    title='Ghost Cluster vs Reference Tokens — Cosine Similarity',
+    title=f'{model_name} — Ghost Cluster vs Reference Tokens (Cosine Similarity)',
     width=1000, height=900,
     template='plotly_dark',
     xaxis=dict(tickangle=45, tickfont=dict(size=8)),
     yaxis=dict(tickfont=dict(size=8), autorange='reversed'),
 )
 
-fig.write_html(str(OUT / 'ghost_heatmap.html'))
-print(f"Saved ghost_heatmap.html")
+out_path = BASE / 'ghost_heatmap.html'
+fig.write_html(str(out_path))
+print(f"Saved to {out_path}")
