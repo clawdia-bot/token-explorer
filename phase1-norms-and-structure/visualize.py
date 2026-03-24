@@ -1,27 +1,41 @@
 """
 Token Embedding Visualization — UMAP to 2D, interactive Plotly
-"""
-import torch
-import numpy as np
-from huggingface_hub import hf_hub_download
-from transformers import AutoTokenizer
 
+Usage: poetry run python phase1-norms-and-structure/visualize.py [--model MODEL] [--sample N]
+"""
+import argparse
+import numpy as np
 import os
 import sys
 
-OUT = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, OUT)
-from tokenutils import token_display, categorize
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from common.models import load_model, add_model_arg
+from common.tokenutils import categorize
 
-print("Loading embeddings...")
-path = hf_hub_download('gpt2', 'pytorch_model.bin')
-sd = torch.load(path, map_location='cpu', weights_only=False)
-emb = sd['wte.weight'].numpy()
-tok = AutoTokenizer.from_pretrained('gpt2')
-labels = [token_display(tok, i) for i in range(emb.shape[0])]
-norms = np.linalg.norm(emb, axis=1)
+parser = argparse.ArgumentParser(description="Phase 1: UMAP embedding visualization")
+add_model_arg(parser)
+parser.add_argument('--sample', type=int, default=0,
+                    help="Subsample N tokens for UMAP (useful for large vocabs like Gemma 256K)")
+args = parser.parse_args()
 
-categories = [categorize(tok, i) for i in range(emb.shape[0])]
+m = load_model(args.model)
+emb, tok, labels, norms = m.emb, m.tokenizer, m.labels, m.norms
+
+categories = [categorize(tok, i) for i in range(m.vocab_size)]
+
+# Optional subsampling for large vocabularies
+if args.sample and args.sample < m.vocab_size:
+    rng = np.random.RandomState(42)
+    sample_idx = rng.choice(m.vocab_size, args.sample, replace=False)
+    sample_idx.sort()
+    emb = emb[sample_idx]
+    labels = [labels[i] for i in sample_idx]
+    norms = norms[sample_idx]
+    categories = [categories[i] for i in sample_idx]
+    indices = sample_idx
+    print(f"Subsampled {args.sample} tokens from {m.vocab_size}")
+else:
+    indices = np.arange(m.vocab_size)
 
 print("Running UMAP...")
 from umap import UMAP
@@ -55,8 +69,8 @@ cat_colors = {
 fig = go.Figure()
 
 for cat in sorted(set(categories)):
-    mask = [i for i, c in enumerate(categories) if c == cat]
-    hover_text = [f"[{i}] {repr(labels[i])}<br>norm={norms[i]:.3f}<br>cat={cat}" for i in mask]
+    mask = [j for j, c in enumerate(categories) if c == cat]
+    hover_text = [f"[{indices[j]}] {repr(labels[j])}<br>norm={norms[j]:.3f}<br>cat={cat}" for j in mask]
     fig.add_trace(go.Scattergl(
         x=coords[mask, 0],
         y=coords[mask, 1],
@@ -69,11 +83,12 @@ for cat in sorted(set(categories)):
         name=f"{cat} ({len(mask)})",
         text=hover_text,
         hoverinfo='text',
-        customdata=[labels[i] for i in mask],
+        customdata=[labels[j] for j in mask],
     ))
 
+sample_note = f" (sampled {args.sample})" if args.sample else ""
 fig.update_layout(
-    title="GPT-2 Token Embedding Space (UMAP, cosine distance)",
+    title=f"{m.name} Token Embedding Space (UMAP, cosine distance){sample_note}",
     width=1400,
     height=800,
     template='plotly_dark',
@@ -160,9 +175,9 @@ search_ui = """
 # Inject search UI before closing </body>
 html_str = html_str.replace('</body>', search_ui + '</body>')
 
-out_path = f"{OUT}/umap_embeddings.html"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results', m.slug)
+os.makedirs(OUT, exist_ok=True)
+out_path = os.path.join(OUT, 'umap_embeddings.html')
 with open(out_path, 'w') as f:
     f.write(html_str)
 print(f"Saved to {out_path}")
-
-print("Done!")

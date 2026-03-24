@@ -7,21 +7,33 @@ Interactive plotly HTML with:
   4. Mean norm by token category (bar chart)
 
 Reads precomputed data from explore.py — no model loading required.
+
+Usage: poetry run python phase1-norms-and-structure/charts.py [--model MODEL]
 """
 
+import argparse
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 import numpy as np
 from pathlib import Path
 
+parser = argparse.ArgumentParser(description="Phase 1: Embedding structure charts")
+parser.add_argument('--model', default='gpt2', help="Model slug (must have run explore.py first)")
+args = parser.parse_args()
+
 # ── Load results ──────────────────────────────────────────────
-OUT = Path(__file__).parent
-with open(OUT / 'results.json') as f:
+BASE = Path(__file__).parent / 'results' / args.model
+if not BASE.exists():
+    raise FileNotFoundError(f"No results for '{args.model}' — run explore.py --model {args.model} first")
+
+with open(BASE / 'results.json') as f:
     results = json.load(f)
 
-explained_ratio = np.load(OUT / 'explained_ratio.npy')
+explained_ratio = np.load(BASE / 'explained_ratio.npy')
 cumulative = np.cumsum(explained_ratio)
+
+model_name = results.get('model', {}).get('name', args.model)
 
 # ── Build figure ──────────────────────────────────────────────
 fig = make_subplots(
@@ -160,11 +172,11 @@ fig.update_xaxes(title_text='Mean L2 Norm', row=2, col=2)
 
 # ── Layout ────────────────────────────────────────────────────
 fig.update_layout(
-    title='GPT-2 Token Embedding Space — Phase 1 Findings',
+    title=f'{model_name} Token Embedding Space — Phase 1 Findings',
     width=1400, height=800,
     template='plotly_dark',
 )
 
-out_path = OUT / 'phase1_charts.html'
+out_path = BASE / 'phase1_charts.html'
 fig.write_html(str(out_path))
 print(f"Saved to {out_path}")
