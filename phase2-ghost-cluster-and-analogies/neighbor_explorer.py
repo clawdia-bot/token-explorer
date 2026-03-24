@@ -1,60 +1,48 @@
 """
 Interactive Nearest Neighbor Explorer
 Type a token, see its nearest neighbors in embedding space.
+Supports model switching via dropdown.
 
-Usage: poetry run python phase2-ghost-cluster-and-analogies/neighbor_explorer.py
+Usage: poetry run python phase2-ghost-cluster-and-analogies/neighbor_explorer.py [--model MODEL] [--port PORT]
 Then open http://localhost:8766 in your browser.
 """
 
-import torch
+import argparse
 import numpy as np
-from huggingface_hub import hf_hub_download
-from transformers import AutoTokenizer
 import json
 import os
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
-OUT = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(OUT, '..', 'phase1-norms-and-structure'))
-from tokenutils import token_display
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from common.models import load_model, add_model_arg, resolve_token, MODEL_REGISTRY
 
-print("Loading GPT-2 embeddings...")
-path = hf_hub_download('gpt2', 'pytorch_model.bin')
-sd = torch.load(path, map_location='cpu', weights_only=False)
-emb = sd['wte.weight'].numpy()
-tok = AutoTokenizer.from_pretrained('gpt2')
-tokens = [tok.decode([i]) for i in range(emb.shape[0])]
-labels = [token_display(tok, i) for i in range(emb.shape[0])]
-norms = np.linalg.norm(emb, axis=1)
-normed_emb = emb / (norms[:, None] + 1e-10)
+parser = argparse.ArgumentParser(description="Interactive nearest neighbor explorer")
+add_model_arg(parser)
+parser.add_argument('--port', type=int, default=8766, help="Server port (default: 8766)")
+args = parser.parse_args()
 
-# Build lookup
-token_lookup = {}
-for i, t in enumerate(tokens):
-    token_lookup[t] = i
-    token_lookup[t.strip()] = i
+# Global state — replaced when model is switched
+state = {}
 
 
-def find_token(query):
-    if ' ' + query in token_lookup:
-        return token_lookup[' ' + query]
-    if query in token_lookup:
-        return token_lookup[query]
-    q = query.lower()
-    for t, i in token_lookup.items():
-        if t.lower() == q or t.strip().lower() == q:
-            return i
-    return None
+def load_into_state(slug):
+    m = load_model(slug)
+    state['model'] = m
+    state['slug'] = slug
+
+
+load_into_state(args.model)
 
 
 def get_neighbors(query, k=15, dedup=True):
-    idx = find_token(query)
+    m = state['model']
+    idx = resolve_token(m, query)
     if idx is None:
         return {'error': f"Token not found: {query}"}
 
-    cos = normed_emb @ normed_emb[idx]
+    cos = m.normed_emb @ m.normed_emb[idx]
     cos[idx] = -2
     nn = np.argsort(cos)[-(k * 5):][::-1]
 
@@ -62,13 +50,13 @@ def get_neighbors(query, k=15, dedup=True):
     seen = set()
     for i in nn:
         entry = {
-            'token': labels[int(i)],
+            'token': m.labels[int(i)],
             'cosine': round(float(cos[i]), 4),
-            'norm': round(float(norms[int(i)]), 4),
+            'norm': round(float(m.norms[int(i)]), 4),
             'idx': int(i),
         }
         if dedup:
-            key = labels[int(i)].strip().lower()
+            key = m.labels[int(i)].strip().lower()
             if key in seen:
                 continue
             seen.add(key)
@@ -78,19 +66,27 @@ def get_neighbors(query, k=15, dedup=True):
 
     return {
         'center': {
-            'token': labels[idx],
+            'token': m.labels[idx],
             'idx': int(idx),
-            'norm': round(float(norms[idx]), 4),
+            'norm': round(float(m.norms[idx]), 4),
         },
         'neighbors': neighbors,
     }
+
+
+def get_presets():
+    """Return preset tokens that exist in the current model."""
+    m = state['model']
+    candidates = ['the', 'king', 'Python', 'dog', 'happy', 'France',
+                   '0', 'she', 'war', 'music', 'water', 'hello']
+    return [t for t in candidates if resolve_token(m, t) is not None]
 
 
 HTML_PAGE = """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Nearest Neighbor Explorer — GPT-2</title>
+<title>Nearest Neighbor Explorer</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -98,7 +94,16 @@ HTML_PAGE = """<!DOCTYPE html>
     display: flex; flex-direction: column; align-items: center; padding: 40px 20px;
   }
   h1 { font-size: 22px; margin-bottom: 8px; color: #fff; }
-  .subtitle { color: #888; font-size: 13px; margin-bottom: 30px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 6px; }
+  .model-bar {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 24px;
+  }
+  .model-bar select {
+    background: #2d2d2d; color: #fff; border: 1px solid #555; padding: 6px 10px;
+    border-radius: 4px; font-size: 13px; font-family: inherit; cursor: pointer;
+  }
+  .model-bar .status { color: #34a853; font-size: 12px; }
+  .model-bar .loading { color: #fbbc04; font-size: 12px; }
   .search-row {
     display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
   }
@@ -121,16 +126,13 @@ HTML_PAGE = """<!DOCTYPE html>
     border-radius: 4px; font-size: 11px; cursor: pointer; transition: all 0.2s;
   }
   .preset:hover { background: #444; color: #fff; border-color: #666; }
-  .center-info {
-    margin-bottom: 20px; text-align: center;
-  }
+  .center-info { margin-bottom: 20px; text-align: center; }
   .center-token { font-size: 28px; color: #fbbc04; font-weight: bold; }
   .center-meta { font-size: 12px; color: #888; margin-top: 4px; }
   .results { width: 100%; max-width: 550px; }
   .neighbor {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 14px; margin-bottom: 3px; border-radius: 4px;
-    position: relative;
+    padding: 8px 14px; margin-bottom: 3px; border-radius: 4px; position: relative;
   }
   .neighbor:nth-child(odd) { background: #252525; }
   .bar {
@@ -141,14 +143,19 @@ HTML_PAGE = """<!DOCTYPE html>
   .neighbor .token { color: #ccc; font-size: 15px; }
   .neighbor:first-child .token { color: #7baaf7; font-weight: bold; }
   .neighbor .meta { color: #666; font-size: 12px; }
-  .neighbor .cosine { color: #888; }
   .rank { color: #555; font-size: 11px; width: 24px; text-align: right; margin-right: 8px; position: relative; z-index: 1; }
   .error { color: #ea4335; margin-top: 12px; font-size: 14px; }
 </style>
 </head>
 <body>
   <h1>Nearest Neighbor Explorer</h1>
-  <p class="subtitle">GPT-2 static embeddings — find a token's closest neighbors by cosine similarity</p>
+  <p class="subtitle">Find a token's closest neighbors by cosine similarity</p>
+
+  <div class="model-bar">
+    <label style="color:#999; font-size:13px;">Model:</label>
+    <select id="model-select" onchange="switchModel()"></select>
+    <span id="model-status" class="status"></span>
+  </div>
 
   <div class="search-row">
     <input type="text" id="query" placeholder="type a token..." value="king">
@@ -157,28 +164,68 @@ HTML_PAGE = """<!DOCTYPE html>
       <input id="dedup" type="checkbox" checked style="vertical-align:middle; cursor:pointer;"> collapse variants
     </label>
   </div>
-  <p class="help">Tokens are space-prefixed in GPT-2, so "king" matches " king". Press Enter to search.</p>
+  <p class="help">Press Enter to search.</p>
 
-  <div class="presets">
-    <span class="preset" onclick="go('the')">the</span>
-    <span class="preset" onclick="go('king')">king</span>
-    <span class="preset" onclick="go('Python')">Python</span>
-    <span class="preset" onclick="go('dog')">dog</span>
-    <span class="preset" onclick="go('happy')">happy</span>
-    <span class="preset" onclick="go('France')">France</span>
-    <span class="preset" onclick="go('\\n')">\\n</span>
-    <span class="preset" onclick="go('SPONSORED')">SPONSORED</span>
-    <span class="preset" onclick="go('0')">0</span>
-    <span class="preset" onclick="go('she')">she</span>
-    <span class="preset" onclick="go('war')">war</span>
-    <span class="preset" onclick="go('music')">music</span>
-  </div>
+  <div class="presets" id="presets"></div>
 
   <div class="center-info" id="center-info"></div>
   <div class="results" id="results"></div>
   <p class="error" id="error"></p>
 
   <script>
+    var currentModel = '';
+
+    async function init() {
+      var resp = await fetch('/models');
+      var data = await resp.json();
+      var sel = document.getElementById('model-select');
+      sel.innerHTML = '';
+      data.models.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m.slug;
+        opt.textContent = m.name;
+        if (m.slug === data.current) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      currentModel = data.current;
+      document.getElementById('model-status').textContent = data.current_name + ' loaded';
+      loadPresets();
+      search();
+    }
+
+    async function switchModel() {
+      var slug = document.getElementById('model-select').value;
+      if (slug === currentModel) return;
+      var statusEl = document.getElementById('model-status');
+      statusEl.textContent = 'Loading ' + slug + '...';
+      statusEl.className = 'loading';
+      var resp = await fetch('/switch?model=' + encodeURIComponent(slug));
+      var data = await resp.json();
+      if (data.ok) {
+        currentModel = slug;
+        statusEl.textContent = data.name + ' loaded';
+        statusEl.className = 'status';
+        loadPresets();
+        search();
+      } else {
+        statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+      }
+    }
+
+    async function loadPresets() {
+      var resp = await fetch('/presets');
+      var presets = await resp.json();
+      var el = document.getElementById('presets');
+      el.innerHTML = '';
+      presets.forEach(function(t) {
+        var span = document.createElement('span');
+        span.className = 'preset';
+        span.textContent = t;
+        span.onclick = function() { go(t); };
+        el.appendChild(span);
+      });
+    }
+
     function go(token) {
       document.getElementById('query').value = token;
       search();
@@ -235,7 +282,7 @@ HTML_PAGE = """<!DOCTYPE html>
       if (e.key === 'Enter') search();
     });
 
-    search();
+    init();
   </script>
 </body>
 </html>"""
@@ -244,26 +291,54 @@ HTML_PAGE = """<!DOCTYPE html>
 class NeighborHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == '/search':
+
+        if parsed.path == '/models':
+            models = [{'slug': s, 'name': n} for s, (n, _) in MODEL_REGISTRY.items()]
+            resp = {
+                'models': models,
+                'current': state['slug'],
+                'current_name': state['model'].name,
+            }
+            self._json_response(resp)
+
+        elif parsed.path == '/switch':
+            params = parse_qs(parsed.query)
+            slug = params.get('model', [''])[0]
+            try:
+                load_into_state(slug)
+                self._json_response({'ok': True, 'name': state['model'].name})
+            except Exception as e:
+                self._json_response({'ok': False, 'error': str(e)})
+
+        elif parsed.path == '/presets':
+            self._json_response(get_presets())
+
+        elif parsed.path == '/search':
             params = parse_qs(parsed.query)
             q = params.get('q', [''])[0]
             dedup = params.get('dedup', ['1'])[0] == '1'
             result = get_neighbors(q, dedup=dedup)
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps(result).encode())
+            self._json_response(result)
+
         else:
             self.send_response(200)
             self.send_header('Content-Type', 'text/html')
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode())
 
+    def _json_response(self, data):
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
     def log_message(self, format, *args):
         pass
 
 
-port = 8766
+port = args.port
 print(f"\nNeighbor Explorer running at http://localhost:{port}")
+print(f"Current model: {state['model'].name}")
+print("Switch models via the dropdown in the browser.")
 print("Press Ctrl+C to stop.\n")
 HTTPServer(('localhost', port), NeighborHandler).serve_forever()
