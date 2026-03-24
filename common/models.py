@@ -43,12 +43,6 @@ class ModelData:
     normed_emb: np.ndarray  # Unit-normalized embeddings
 
 
-def list_models():
-    """Print available models."""
-    print("Available models:")
-    for slug, (name, hf_id) in MODEL_REGISTRY.items():
-        print(f"  {slug:20s}  {name:20s}  ({hf_id})")
-
 
 def load_model(slug: str) -> ModelData:
     """Load a model's embeddings, tokenizer, and precomputed quantities.

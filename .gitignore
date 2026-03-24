@@ -6,6 +6,9 @@
 # Visualizations (reproducible from scripts)
 *.html
 
+# Generated results (per-model subdirs)
+**/results/
+
 # Python
 __pycache__/
 *.pyc
