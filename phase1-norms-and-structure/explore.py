@@ -1,38 +1,38 @@
 """
 Token Embedding Space Geometry Explorer
-GPT-2 (50,257 tokens × 768 dimensions)
+Supports any model in the registry (default: GPT-2).
+
+Usage: poetry run python phase1-norms-and-structure/explore.py [--model MODEL]
 """
 
-import torch
+import argparse
 import numpy as np
-from huggingface_hub import hf_hub_download
-from transformers import AutoTokenizer
 from scipy import stats
 import json
 import os
 import sys
 
-OUT = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, OUT)
-from tokenutils import token_display, categorize
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from common.models import load_model, add_model_arg
+from common.tokenutils import categorize
 
-print("Loading GPT-2 embeddings...")
-path = hf_hub_download('gpt2', 'pytorch_model.bin')
-sd = torch.load(path, map_location='cpu', weights_only=False)
-emb = sd['wte.weight'].numpy()  # [50257, 768]
-tok = AutoTokenizer.from_pretrained('gpt2')
+parser = argparse.ArgumentParser(description="Phase 1: Token embedding space geometry")
+add_model_arg(parser)
+args = parser.parse_args()
 
-print(f"Embedding matrix: {emb.shape[0]} tokens x {emb.shape[1]} dimensions ({emb.dtype})")
+m = load_model(args.model)
+emb, tok, tokens, labels, norms = m.emb, m.tokenizer, m.tokens, m.labels, m.norms
 
-# Decode all tokens — raw decoded form for analysis, display form for output
-tokens = [tok.decode([i]) for i in range(emb.shape[0])]
-labels = [token_display(tok, i) for i in range(emb.shape[0])]
+print(f"Embedding matrix: {m.vocab_size} tokens x {m.hidden_dim} dimensions ({emb.dtype})")
 
 # Precompute shared quantities
-norms = np.linalg.norm(emb, axis=1)
 mean_emb = emb.mean(axis=0)
 mean_norm = np.linalg.norm(mean_emb)
 lengths = np.array([len(t) for t in tokens])
+
+# Output directory
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results', m.slug)
+os.makedirs(OUT, exist_ok=True)
 
 # ============================================================
 # 1. NORMS AND FREQUENCY
@@ -50,10 +50,9 @@ r_len, p_len = stats.pearsonr(lengths, norms)
 
 print(f"  BPE index vs norm correlation: r={r_idx:.3f} (p={p_idx:.2e})")
 print(f"  Norms: mean={norms.mean():.3f} +/- {norms.std():.3f}, range [{norms.min():.3f}, {norms.max():.3f}]")
-print(f"  Smallest: {repr(labels[smallest[0]])} ({norms[smallest[0]]:.3f}) — common preposition")
-print(f"  Largest:  {repr(labels[largest[0]])} ({norms[largest[0]]:.3f}) — rare label")
+print(f"  Smallest: {repr(labels[smallest[0]])} ({norms[smallest[0]]:.3f})")
+print(f"  Largest:  {repr(labels[largest[0]])} ({norms[largest[0]]:.3f})")
 print(f"  Token length vs norm: r={r_len:.3f} (shorter tokens tend toward higher frequency)")
-print(f"  -> Rare tokens have higher norms. But is this real structure or an artifact? See section 4.")
 
 # ============================================================
 # 2. ANISOTROPY
@@ -64,7 +63,7 @@ print("="*60)
 
 rng = np.random.RandomState(42)
 n_sample = 5000
-idx = rng.choice(emb.shape[0], n_sample, replace=False)
+idx = rng.choice(m.vocab_size, n_sample, replace=False)
 sample = emb[idx]
 sample_norms = norms[idx]
 
@@ -77,8 +76,6 @@ cos_pairs = cos_matrix[triu_idx]
 cos_hist, cos_edges = np.histogram(cos_pairs, bins=50)
 
 print(f"  Mean pairwise cosine: {cos_pairs.mean():.3f} +/- {cos_pairs.std():.3f} ({n_sample} random tokens)")
-print(f"  -> Moderately anisotropic (0 = isotropic sphere, >0.5 = narrow cone).")
-print(f"  -> Embeddings favor the same hemisphere but aren't degenerate.")
 
 # ============================================================
 # 3. EFFECTIVE DIMENSIONALITY (PCA)
@@ -89,7 +86,7 @@ print("="*60)
 
 emb_centered = emb - mean_emb
 _, S, _ = np.linalg.svd(emb_centered, full_matrices=False)
-explained_var = S**2 / (emb.shape[0] - 1)
+explained_var = S**2 / (m.vocab_size - 1)
 total_var = explained_var.sum()
 explained_ratio = explained_var / total_var
 cumulative = np.cumsum(explained_ratio)
@@ -104,11 +101,10 @@ thresholds = {}
 for threshold in [0.5, 0.8, 0.9, 0.95, 0.99]:
     thresholds[threshold] = int(np.searchsorted(cumulative, threshold) + 1)
 
-print(f"  Participation ratio: {pr:.0f} / {emb.shape[1]} dims")
-print(f"  Entropy-based effective dims: {eff_dim_entropy:.0f} / {emb.shape[1]}")
+print(f"  Participation ratio: {pr:.0f} / {m.hidden_dim} dims")
+print(f"  Entropy-based effective dims: {eff_dim_entropy:.0f} / {m.hidden_dim}")
 print(f"  Variance thresholds: 50% at {thresholds[0.5]} dims, 90% at {thresholds[0.9]}, 99% at {thresholds[0.99]}")
 print(f"  PC1 explains just {explained_ratio[0]*100:.2f}% — no single dimension dominates.")
-print(f"  -> Despite the anisotropy, the space genuinely uses most of its {emb.shape[1]} dimensions.")
 
 # ============================================================
 # 4. ORIGIN vs CENTROID — is the frequency-norm relationship real?
@@ -135,8 +131,8 @@ print(f"  Farthest from centroid: {repr(labels[farthest_from_mean])} (dist={dist
 min_cos_idx = int(cos_to_mean.argmin())
 print(f"  Most dissimilar from mean direction: {repr(labels[min_cos_idx])} (cosine to mean={cos_to_mean.min():.3f})")
 
-ratio = abs(r_idx_centered) / abs(r_idx)
-print(f"  -> Centroid correlation is {ratio:.0%} of origin correlation. Real structure, partly amplified by centroid displacement.")
+ratio = abs(r_idx_centered) / abs(r_idx) if abs(r_idx) > 0 else 0
+print(f"  -> Centroid correlation is {ratio:.0%} of origin correlation.")
 
 # ============================================================
 # 5. TOKEN CATEGORIES
@@ -146,7 +142,7 @@ print("5. TOKEN CATEGORIES — script and type clustering")
 print("="*60)
 
 categories = {}
-for i in range(emb.shape[0]):
+for i in range(m.vocab_size):
     cat = categorize(tok, i)
     if cat not in categories:
         categories[cat] = []
@@ -200,16 +196,31 @@ for i, t in enumerate(tokens):
         })
 
 # Build binned frequency means
+bin_size = max(m.vocab_size // 5, 1)
 binned_means = []
-for start in range(0, 50000, 10000):
-    end = min(start + 10000, len(norms))
+for start in range(0, m.vocab_size, bin_size):
+    end = min(start + bin_size, m.vocab_size)
     binned_means.append({
         'range': f'{start}-{end}',
         'mean_norm': float(norms[start:end].mean()),
         'std_norm': float(norms[start:end].std()),
     })
 
+# PCA variance_at_k — only include valid k values for this model's hidden_dim
+variance_at_k = {}
+for k in [1, 2, 3, 5, 10, 20, 50, 100, 200, 300, 500, 768, 1024, 2048]:
+    if k <= len(cumulative):
+        variance_at_k[str(k)] = float(cumulative[k-1])
+
 results = {
+    'model': {
+        'name': m.name,
+        'slug': m.slug,
+        'hf_id': m.hf_id,
+        'vocab_size': m.vocab_size,
+        'hidden_dim': m.hidden_dim,
+        'tied': m.tied,
+    },
     'shape': list(emb.shape),
     'norms': {
         'mean': float(norms.mean()),
@@ -252,9 +263,9 @@ results = {
         'entropy_effective_dims': float(eff_dim_entropy),
         'top10_singular_values': S[:10].tolist(),
         'top10_explained': float(cumulative[9]),
-        'top50_explained': float(cumulative[49]),
-        'top100_explained': float(cumulative[99]),
-        'variance_at_k': {str(k): float(cumulative[k-1]) for k in [1, 2, 3, 5, 10, 20, 50, 100, 200, 300, 500, 768] if k <= len(cumulative)},
+        'top50_explained': float(cumulative[min(49, len(cumulative)-1)]),
+        'top100_explained': float(cumulative[min(99, len(cumulative)-1)]),
+        'variance_at_k': variance_at_k,
         'threshold_components': {str(t): int(np.searchsorted(cumulative, t) + 1) for t in [0.5, 0.8, 0.9, 0.95, 0.99]},
     },
     'anisotropy': {
@@ -290,6 +301,5 @@ with open(os.path.join(OUT, 'results.json'), 'w') as f:
 np.save(os.path.join(OUT, 'norms.npy'), norms)
 np.save(os.path.join(OUT, 'explained_ratio.npy'), explained_ratio)
 
-print(f"\nDetailed data saved to results.json (ranked lists, histograms, percentiles, etc.)")
-print("Numpy arrays saved (norms, explained_ratio).")
-print("\nRun charts.py for finding visualizations, visualize.py for the UMAP interactive plot.")
+print(f"\nResults saved to {OUT}/")
+print("Run charts.py for finding visualizations, visualize.py for the UMAP interactive plot.")
