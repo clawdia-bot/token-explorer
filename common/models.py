@@ -15,14 +15,14 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from .tokenutils import token_display
 
 # slug -> (display_name, huggingface_id)
+# Kept to models that run in under a minute on M4 MacBook.
+# Larger models (Gemma 2-2B, Llama 3.2-1B, Phi-3.5-mini) were tested but
+# don't surface findings beyond what these four cover — see FINDINGS.md.
 MODEL_REGISTRY = {
     'gpt2':          ('GPT-2',          'gpt2'),
     'pythia-70m':    ('Pythia-70m',     'EleutherAI/pythia-70m'),
     'smollm2-135m':  ('SmolLM2-135M',  'HuggingFaceTB/SmolLM2-135M'),
     'qwen2.5-0.5b':  ('Qwen2.5-0.5B',  'Qwen/Qwen2.5-0.5B'),
-    'gemma-2-2b':    ('Gemma 2-2B',    'google/gemma-2-2b'),
-    'llama-3.2-1b':  ('Llama 3.2-1B',  'meta-llama/Llama-3.2-1B'),
-    'phi-3.5-mini':  ('Phi-3.5-mini',  'microsoft/Phi-3.5-mini-instruct'),
 }
 
 
