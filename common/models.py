@@ -15,9 +15,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from .tokenutils import token_display
 
 # slug -> (display_name, huggingface_id)
-# Kept to models that run in under a minute on M4 MacBook.
-# Larger models (Gemma 2-2B, Llama 3.2-1B, Phi-3.5-mini) were tested but
-# don't surface findings beyond what these four cover — see FINDINGS.md.
+# Kept to the small models used by the active comparison workflow.
 MODEL_REGISTRY = {
     'gpt2':          ('GPT-2',          'gpt2'),
     'pythia-70m':    ('Pythia-70m',     'EleutherAI/pythia-70m'),
@@ -103,37 +101,60 @@ def load_model(slug: str) -> ModelData:
     )
 
 
-def resolve_token(model: ModelData, query: str) -> int | None:
-    """Find the best token index for a query string.
+def _ensure_token_lookups(model: ModelData):
+    """Build exact and heuristic token lookups lazily on the model object."""
+    if hasattr(model, '_token_lookup_exact') and hasattr(model, '_token_lookup_loose'):
+        return
 
-    Tries: space-prefixed exact, exact, case-insensitive variants.
-    Returns None if no match found.
+    exact = {}
+    loose = {}
+    for i, token in enumerate(model.tokens):
+        exact.setdefault(token, []).append(i)
+        loose[token] = i
+        stripped = token.strip()
+        if stripped not in loose:
+            loose[stripped] = i
+
+    model._token_lookup_exact = exact
+    model._token_lookup_loose = loose
+
+
+def resolve_token_exact(model: ModelData, token: str) -> int | None:
+    """Resolve an exact decoded token string.
+
+    Returns None if the token string is missing or ambiguous.
     """
-    # Build lookup on first call (cached on the model object)
-    if not hasattr(model, '_token_lookup'):
-        lookup = {}
-        for i, t in enumerate(model.tokens):
-            lookup[t] = i
-            stripped = t.strip()
-            if stripped not in lookup:
-                lookup[stripped] = i
-        model._token_lookup = lookup
+    _ensure_token_lookups(model)
+    matches = model._token_lookup_exact.get(token, [])
+    if len(matches) != 1:
+        return None
+    return matches[0]
 
-    lu = model._token_lookup
 
-    # Try space-prefixed (most tokenizers use leading space for word tokens)
+def resolve_token_loose(model: ModelData, query: str) -> int | None:
+    """Find a token index using exploration-friendly heuristics.
+
+    Tries: space-prefixed exact, exact, case-insensitive stripped variants.
+    """
+    _ensure_token_lookups(model)
+    lu = model._token_lookup_loose
+
     if ' ' + query in lu:
         return lu[' ' + query]
     if query in lu:
         return lu[query]
 
-    # Case-insensitive fallback
     q = query.lower()
-    for t, i in lu.items():
-        if t.lower() == q or t.strip().lower() == q:
-            return i
+    for token, idx in lu.items():
+        if token.lower() == q or token.strip().lower() == q:
+            return idx
 
     return None
+
+
+def resolve_token(model: ModelData, query: str) -> int | None:
+    """Backward-compatible alias for the loose exploratory resolver."""
+    return resolve_token_loose(model, query)
 
 
 def add_model_arg(parser: argparse.ArgumentParser):
