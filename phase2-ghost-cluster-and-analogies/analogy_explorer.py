@@ -16,7 +16,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from common.models import load_model, add_model_arg, resolve_token, MODEL_REGISTRY
+from common.models import load_model, add_model_arg, resolve_token_loose, MODEL_REGISTRY
 
 parser = argparse.ArgumentParser(description="Interactive analogy explorer")
 add_model_arg(parser)
@@ -40,9 +40,9 @@ def solve_analogy(a_str, b_str, c_str, k=10, dedup=True):
     """a is to b as c is to ? Returns top-k results."""
     m = state['model']
 
-    ia = resolve_token(m, a_str)
-    ib = resolve_token(m, b_str)
-    ic = resolve_token(m, c_str)
+    ia = resolve_token_loose(m, a_str)
+    ib = resolve_token_loose(m, b_str)
+    ic = resolve_token_loose(m, c_str)
 
     missing = []
     if ia is None: missing.append(a_str)
@@ -95,7 +95,7 @@ def get_presets():
     ]
     valid = []
     for a, b, c in all_presets:
-        if all(resolve_token(m, t) is not None for t in (a, b, c)):
+        if all(resolve_token_loose(m, t) is not None for t in (a, b, c)):
             valid.append({'a': a, 'b': b, 'c': c, 'label': f'{a}:{b}::{c}:?'})
     return valid
 
@@ -174,6 +174,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <body>
   <h1>Embedding Analogy Explorer</h1>
   <p class="subtitle">A is to B as C is to ?</p>
+  <p class="subtitle" style="margin-bottom:18px;">Uses heuristic token lookup for interactive exploration, not the strict research probe set.</p>
 
   <div class="model-bar">
     <label style="color:#999; font-size:13px;">Model:</label>

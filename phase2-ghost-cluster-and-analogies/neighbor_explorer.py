@@ -16,7 +16,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from common.models import load_model, add_model_arg, resolve_token, MODEL_REGISTRY
+from common.models import load_model, add_model_arg, resolve_token_loose, MODEL_REGISTRY
 
 parser = argparse.ArgumentParser(description="Interactive nearest neighbor explorer")
 add_model_arg(parser)
@@ -38,7 +38,7 @@ load_into_state(args.model)
 
 def get_neighbors(query, k=15, dedup=True):
     m = state['model']
-    idx = resolve_token(m, query)
+    idx = resolve_token_loose(m, query)
     if idx is None:
         return {'error': f"Token not found: {query}"}
 
@@ -79,7 +79,7 @@ def get_presets():
     m = state['model']
     candidates = ['the', 'king', 'Python', 'dog', 'happy', 'France',
                    '0', 'she', 'war', 'music', 'water', 'hello']
-    return [t for t in candidates if resolve_token(m, t) is not None]
+    return [t for t in candidates if resolve_token_loose(m, t) is not None]
 
 
 HTML_PAGE = """<!DOCTYPE html>
@@ -150,6 +150,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <body>
   <h1>Nearest Neighbor Explorer</h1>
   <p class="subtitle">Find a token's closest neighbors by cosine similarity</p>
+  <p class="subtitle" style="margin-bottom:18px;">Uses heuristic token lookup for interactive exploration, not the strict research probe set.</p>
 
   <div class="model-bar">
     <label style="color:#999; font-size:13px;">Model:</label>

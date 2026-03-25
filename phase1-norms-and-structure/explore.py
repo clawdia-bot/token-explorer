@@ -38,7 +38,7 @@ os.makedirs(OUT, exist_ok=True)
 # 1. NORMS AND FREQUENCY
 # ============================================================
 print("\n" + "="*60)
-print("1. NORMS AND FREQUENCY — rarity writes itself into geometry")
+print("1. NORMS AND TOKEN RANK — token order writes itself into geometry")
 print("="*60)
 
 smallest = np.argsort(norms)[:20]
@@ -48,11 +48,11 @@ hist_counts, hist_edges = np.histogram(norms, bins=50)
 r_idx, p_idx = stats.pearsonr(np.arange(len(norms)), norms)
 r_len, p_len = stats.pearsonr(lengths, norms)
 
-print(f"  BPE index vs norm correlation: r={r_idx:.3f} (p={p_idx:.2e})")
+print(f"  Token rank vs norm correlation: r={r_idx:.3f} (p={p_idx:.2e})")
 print(f"  Norms: mean={norms.mean():.3f} +/- {norms.std():.3f}, range [{norms.min():.3f}, {norms.max():.3f}]")
 print(f"  Smallest: {repr(labels[smallest[0]])} ({norms[smallest[0]]:.3f})")
 print(f"  Largest:  {repr(labels[largest[0]])} ({norms[largest[0]]:.3f})")
-print(f"  Token length vs norm: r={r_len:.3f} (shorter tokens tend toward higher frequency)")
+print(f"  Token length vs norm: r={r_len:.3f} (shorter tokens tend toward earlier token ranks)")
 
 # ============================================================
 # 2. ANISOTROPY
@@ -85,8 +85,9 @@ print("3. EFFECTIVE DIMENSIONALITY — how much space is actually used?")
 print("="*60)
 
 emb_centered = emb - mean_emb
-_, S, _ = np.linalg.svd(emb_centered, full_matrices=False)
-explained_var = S**2 / (m.vocab_size - 1)
+cov = (emb_centered.T @ emb_centered) / (m.vocab_size - 1)
+eigvals = np.linalg.eigvalsh(cov)
+explained_var = np.clip(eigvals[::-1], 0.0, None)
 total_var = explained_var.sum()
 explained_ratio = explained_var / total_var
 cumulative = np.cumsum(explained_ratio)
@@ -107,10 +108,10 @@ print(f"  Variance thresholds: 50% at {thresholds[0.5]} dims, 90% at {thresholds
 print(f"  PC1 explains just {explained_ratio[0]*100:.2f}% — no single dimension dominates.")
 
 # ============================================================
-# 4. ORIGIN vs CENTROID — is the frequency-norm relationship real?
+# 4. ORIGIN vs CENTROID — is the token-rank effect real?
 # ============================================================
 print("\n" + "="*60)
-print("4. ORIGIN vs CENTROID — is the frequency-norm relationship real?")
+print("4. ORIGIN vs CENTROID — is the token-rank effect real?")
 print("="*60)
 
 dists_to_mean = np.linalg.norm(emb - mean_emb, axis=1)
@@ -124,8 +125,8 @@ cos_to_mean = (emb @ mean_emb) / (norms * mean_norm + 1e-10)
 r_idx_centered, p_idx_centered = stats.pearsonr(np.arange(len(dists_to_mean)), dists_to_mean)
 r_len_centered, p_len_centered = stats.pearsonr(lengths, dists_to_mean)
 
-print(f"  From origin:   BPE index vs norm r={r_idx:.3f}, token length vs norm r={r_len:.3f}")
-print(f"  From centroid: BPE index vs dist r={r_idx_centered:.3f}, token length vs dist r={r_len_centered:.3f}")
+print(f"  From origin:   token rank vs norm r={r_idx:.3f}, token length vs norm r={r_len:.3f}")
+print(f"  From centroid: token rank vs dist r={r_idx_centered:.3f}, token length vs dist r={r_len_centered:.3f}")
 print(f"  Closest to centroid: {repr(labels[closest_to_mean[0]])} (dist={dists_to_mean[closest_to_mean[0]]:.3f})")
 print(f"  Farthest from centroid: {repr(labels[farthest_from_mean])} (dist={dists_to_mean[farthest_from_mean]:.3f})")
 min_cos_idx = int(cos_to_mean.argmin())
@@ -195,7 +196,7 @@ for i, t in enumerate(tokens):
             'token': repr(t), 'ord': ord(t),
         })
 
-# Build binned frequency means
+# Build binned token-rank means
 bin_size = max(m.vocab_size // 5, 1)
 binned_means = []
 for start in range(0, m.vocab_size, bin_size):
@@ -261,7 +262,7 @@ results = {
         'total_variance': float(total_var),
         'participation_ratio': float(pr),
         'entropy_effective_dims': float(eff_dim_entropy),
-        'top10_singular_values': S[:10].tolist(),
+        'top10_singular_values': np.sqrt(explained_var[:10] * (m.vocab_size - 1)).tolist(),
         'top10_explained': float(cumulative[9]),
         'top50_explained': float(cumulative[min(49, len(cumulative)-1)]),
         'top100_explained': float(cumulative[min(99, len(cumulative)-1)]),
@@ -288,7 +289,7 @@ results = {
         'per_length': per_length,
         'single_char_tokens': single_char_tokens,
     },
-    'frequency_proxy': {
+    'token_rank': {
         'pearson_r': float(r_idx), 'pearson_p': float(p_idx),
         'binned_means': binned_means,
     },

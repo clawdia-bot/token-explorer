@@ -2,11 +2,10 @@
 Cross-Model Comparison Engine
 
 Reads Phase 1 + Phase 2 results from multiple models and computes:
-  1. Isotropy radar profile (anisotropy, participation ratio, effective dims)
-  2. Ghost cluster universality (do control tokens cluster in all models?)
-  3. Analogy scorecard (standardized battery across all models)
-  4. Neighborhood Jaccard overlap (do models agree on semantic neighbors?)
-  5. Outlier migration (are weird tokens weird everywhere?)
+  1. Isotropy radar profile
+  2. Ghost-cluster summary
+  3. Analogy scorecard from curated exact probes
+  4. Neighborhood agreement inside a curated concept inventory
 
 Prerequisites: Run explore.py and deep_dive.py for each model first.
 
@@ -17,12 +16,19 @@ import argparse
 import json
 import os
 import sys
-import numpy as np
-from scipy import stats as sp_stats
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from common.models import load_model, resolve_token, MODEL_REGISTRY
+from common.models import MODEL_REGISTRY, load_model
+from common.probes import (
+    COMPARISON_ANALOGIES,
+    COMPARISON_NEIGHBOR_PROBES,
+    CONCEPTS,
+    token_for_concept,
+    validate_probe_pack,
+)
 
 ROOT = Path(__file__).parent.parent
 OUT = Path(__file__).parent / 'results'
@@ -58,36 +64,6 @@ def load_phase2_results(slug):
     return None
 
 
-def build_shared_vocabulary(models):
-    """Find tokens that decode to the same string across all models.
-
-    Returns: dict mapping decoded_string -> {slug: token_index}
-    """
-    per_model = {}
-    for slug, m in models.items():
-        token_map = {}
-        for i, t in enumerate(m.tokens):
-            stripped = t.strip()
-            if stripped and stripped not in token_map:
-                token_map[stripped] = i
-        per_model[slug] = token_map
-
-    # Intersection of all decoded strings
-    slugs = list(models.keys())
-    shared_strings = set(per_model[slugs[0]].keys())
-    for slug in slugs[1:]:
-        shared_strings &= set(per_model[slug].keys())
-
-    shared = {}
-    for s in shared_strings:
-        shared[s] = {slug: per_model[slug][s] for slug in slugs}
-
-    return shared
-
-
-# ============================================================
-# Determine which models to compare
-# ============================================================
 if args.all:
     model_slugs = find_available_models()
 elif args.models:
@@ -102,264 +78,208 @@ if len(model_slugs) < 2:
 
 print(f"Comparing {len(model_slugs)} models: {', '.join(model_slugs)}")
 
-# Load Phase 1 results (no model loading needed for isotropy/ghost sections)
 p1_results = {slug: load_phase1_results(slug) for slug in model_slugs}
 p2_results = {slug: load_phase2_results(slug) for slug in model_slugs}
 
 # ============================================================
 # 1. ISOTROPY RADAR PROFILE
 # ============================================================
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("1. ISOTROPY RADAR PROFILE")
-print("="*60)
+print("=" * 60)
 
 isotropy = {}
 for slug in model_slugs:
-    r = p1_results[slug]
-    model_info = r.get('model', {})
-    hidden_dim = model_info.get('hidden_dim', r['shape'][1])
+    result = p1_results[slug]
+    model_info = result.get('model', {})
+    hidden_dim = model_info.get('hidden_dim', result['shape'][1])
 
     isotropy[slug] = {
         'name': model_info.get('name', slug),
         'hidden_dim': hidden_dim,
-        'vocab_size': model_info.get('vocab_size', r['shape'][0]),
-        'anisotropy': r['anisotropy']['mean_cosine'],
-        'participation_ratio': r['pca']['participation_ratio'],
-        'participation_ratio_normalized': r['pca']['participation_ratio'] / hidden_dim,
-        'entropy_effective_dims': r['pca']['entropy_effective_dims'],
-        'entropy_effective_dims_normalized': r['pca']['entropy_effective_dims'] / hidden_dim,
-        'mean_norm': r['norms']['mean'],
-        'norm_std': r['norms']['std'],
-        'norm_range': r['norms']['max'] - r['norms']['min'],
+        'vocab_size': model_info.get('vocab_size', result['shape'][0]),
+        'anisotropy': result['anisotropy']['mean_cosine'],
+        'participation_ratio': result['pca']['participation_ratio'],
+        'participation_ratio_normalized': result['pca']['participation_ratio'] / hidden_dim,
+        'entropy_effective_dims': result['pca']['entropy_effective_dims'],
+        'entropy_effective_dims_normalized': result['pca']['entropy_effective_dims'] / hidden_dim,
+        'mean_norm': result['norms']['mean'],
+        'norm_std': result['norms']['std'],
+        'norm_range': result['norms']['max'] - result['norms']['min'],
     }
-    i = isotropy[slug]
-    print(f"  {i['name']:20s}  aniso={i['anisotropy']:.3f}  PR={i['participation_ratio']:.0f}/{hidden_dim}  "
-          f"eff_dim={i['entropy_effective_dims']:.0f}/{hidden_dim}  mean_norm={i['mean_norm']:.3f}")
+    item = isotropy[slug]
+    print(
+        f"  {item['name']:20s}  aniso={item['anisotropy']:.3f}  "
+        f"PR={item['participation_ratio']:.0f}/{hidden_dim}  "
+        f"eff_dim={item['entropy_effective_dims']:.0f}/{hidden_dim}  "
+        f"mean_norm={item['mean_norm']:.3f}"
+    )
 
 # ============================================================
-# 2. GHOST CLUSTER UNIVERSALITY
+# 2. GHOST CLUSTER SUMMARY
 # ============================================================
-print("\n" + "="*60)
-print("2. GHOST CLUSTER UNIVERSALITY")
-print("="*60)
+print("\n" + "=" * 60)
+print("2. GHOST CLUSTER SUMMARY")
+print("=" * 60)
 
 ghost_data = {}
 for slug in model_slugs:
-    r2 = p2_results.get(slug)
-    if r2 and 'ghost_cluster' in r2:
-        gc = r2['ghost_cluster']
+    result = p2_results.get(slug)
+    if result and 'ghost_cluster' in result:
+        ghost = result['ghost_cluster']
         ghost_data[slug] = {
-            'name': r2.get('model', {}).get('name', slug),
-            'count': gc['count'],
-            'mean_cosine': gc['pairwise_cosine']['mean'] if gc['pairwise_cosine']['mean'] is not None else None,
-            'mean_norm': gc.get('mean_norm'),
-            'newline_in_ghost': gc.get('newline_in_ghost', False),
+            'name': result.get('model', {}).get('name', slug),
+            'count': ghost['count'],
+            'mean_cosine': ghost['pairwise_cosine']['mean'],
+            'min_cosine': ghost['pairwise_cosine']['min'],
+            'max_cosine': ghost['pairwise_cosine']['max'],
+            'diameter': ghost.get('diameter'),
+            'mean_norm': ghost.get('mean_norm'),
+            'newline_in_ghost': ghost.get('newline_in_ghost', False),
         }
-        g = ghost_data[slug]
-        cos_str = f"{g['mean_cosine']:.3f}" if g['mean_cosine'] is not None else "N/A"
-        print(f"  {g['name']:20s}  {g['count']} tokens, mean cosine={cos_str}, "
-              f"newline_in_ghost={g['newline_in_ghost']}")
+        item = ghost_data[slug]
+        cos_str = f"{item['mean_cosine']:.3f}" if item['mean_cosine'] is not None else "N/A"
+        min_str = f"{item['min_cosine']:.3f}" if item['min_cosine'] is not None else "N/A"
+        print(
+            f"  {item['name']:20s}  {item['count']} tokens, mean cosine={cos_str}, "
+            f"min cosine={min_str}, newline_in_ghost={item['newline_in_ghost']}"
+        )
     else:
         print(f"  {slug:20s}  (no Phase 2 results)")
 
 # ============================================================
-# 3-5 require loading actual embeddings
+# 3-4 require loading exact probe embeddings
 # ============================================================
-print("\n" + "="*60)
-print("Loading models for embedding-level comparisons...")
-print("="*60)
+print("\n" + "=" * 60)
+print("Loading models for curated exact-probe comparisons...")
+print("=" * 60)
 
-# Load one at a time, extract what we need, keep lightweight
-model_data = {}
-for slug in model_slugs:
-    m = load_model(slug)
-    model_data[slug] = m
-
-shared_vocab = build_shared_vocabulary(model_data)
-print(f"\nShared vocabulary: {len(shared_vocab)} tokens across {len(model_slugs)} models")
+model_data = {slug: load_model(slug) for slug in model_slugs}
+probe_indices = validate_probe_pack(model_data)
+inventory_ids = list(CONCEPTS.keys())
+print(f"\nCurated concept inventory: {len(inventory_ids)} exact concepts")
 
 # ============================================================
 # 3. ANALOGY SCORECARD
 # ============================================================
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("3. ANALOGY SCORECARD")
-print("="*60)
-
-analogy_battery = [
-    ('king', 'queen', 'man', 'woman', 'gender'),
-    ('dog', 'dogs', 'cat', 'cats', 'plural'),
-    ('France', 'Paris', 'Japan', 'Tokyo', 'capital'),
-    ('big', 'bigger', 'small', 'smaller', 'comparative'),
-    ('good', 'best', 'bad', 'worst', 'superlative'),
-    ('walk', 'walked', 'run', 'ran', 'past_tense'),
-    ('Spain', 'Spanish', 'Germany', 'German', 'demonym'),
-    ('hot', 'cold', 'up', 'down', 'antonym'),
-    ('man', 'woman', 'boy', 'girl', 'gender2'),
-    ('eat', 'ate', 'drink', 'drank', 'past_tense2'),
-    ('Italy', 'Rome', 'Germany', 'Berlin', 'capital2'),
-    ('fast', 'faster', 'slow', 'slower', 'comparative2'),
-]
+print("=" * 60)
 
 scorecard = {}
 for slug in model_slugs:
-    m = model_data[slug]
+    model = model_data[slug]
+    resolved = probe_indices[slug]
     model_scores = {}
-    for a, b, c, expected, label in analogy_battery:
-        ia = resolve_token(m, a)
-        ib = resolve_token(m, b)
-        ic = resolve_token(m, c)
 
-        if None in (ia, ib, ic):
-            model_scores[label] = {'top1': None, 'cosine': None, 'expected_rank': None, 'success': False, 'skipped': True}
-            continue
+    for label, a_concept, b_concept, c_concept, expected_concept in COMPARISON_ANALOGIES:
+        ia = resolved[a_concept]
+        ib = resolved[b_concept]
+        ic = resolved[c_concept]
+        expected_idx = resolved[expected_concept]
 
-        vec = m.emb[ib] - m.emb[ia] + m.emb[ic]
+        vec = model.emb[ib] - model.emb[ia] + model.emb[ic]
         vec_norm = np.linalg.norm(vec)
-        cos = (m.emb @ vec) / (m.norms * vec_norm + 1e-10)
+        cos = (model.emb @ vec) / (model.norms * vec_norm + 1e-10)
         for idx in (ia, ib, ic):
             cos[idx] = -2
 
         top_idx = np.argsort(cos)[-5:][::-1]
-        top1_token = m.tokens[top_idx[0]].strip()
-        top1_cos = float(cos[top_idx[0]])
+        top1_idx = int(top_idx[0])
+        top1_token = model.tokens[top1_idx]
+        top1_cos = float(cos[top1_idx])
 
-        # Check if expected answer is in top-5
-        ie = resolve_token(m, expected)
         expected_rank = None
-        if ie is not None:
-            rank_list = list(top_idx)
-            if ie in rank_list:
-                expected_rank = rank_list.index(ie) + 1
-            else:
-                # Search further
-                all_sorted = np.argsort(cos)[::-1]
-                pos = np.where(all_sorted == ie)[0]
-                expected_rank = int(pos[0]) + 1 if len(pos) > 0 else None
+        rank_list = list(top_idx)
+        if expected_idx in rank_list:
+            expected_rank = rank_list.index(expected_idx) + 1
+        else:
+            all_sorted = np.argsort(cos)[::-1]
+            pos = np.where(all_sorted == expected_idx)[0]
+            expected_rank = int(pos[0]) + 1 if len(pos) > 0 else None
 
-        success = top1_token.lower() == expected.lower()
+        success = top1_idx == expected_idx
         model_scores[label] = {
             'top1': top1_token,
             'cosine': round(top1_cos, 4),
-            'expected': expected,
+            'expected': token_for_concept(slug, expected_concept),
             'expected_rank': expected_rank,
             'success': success,
             'skipped': False,
         }
 
     scorecard[slug] = model_scores
-    successes = sum(1 for v in model_scores.values() if v['success'])
-    skipped = sum(1 for v in model_scores.values() if v.get('skipped'))
-    total = len(analogy_battery) - skipped
-    print(f"  {m.name:20s}  {successes}/{total} correct" + (f" ({skipped} skipped)" if skipped else ""))
+    successes = sum(1 for value in model_scores.values() if value['success'])
+    total = len(COMPARISON_ANALOGIES)
+    print(f"  {model.name:20s}  {successes}/{total} correct")
 
-# Print detailed scorecard
 print("\n  Detailed results:")
 header = f"  {'Analogy':20s}"
 for slug in model_slugs:
-    name = model_data[slug].name
-    header += f"  {name:>15s}"
+    header += f"  {model_data[slug].name:>15s}"
 print(header)
 print("  " + "-" * len(header))
 
-for a, b, c, expected, label in analogy_battery:
+for label, *_rest in COMPARISON_ANALOGIES:
     row = f"  {label:20s}"
     for slug in model_slugs:
-        s = scorecard[slug][label]
-        if s.get('skipped'):
-            row += f"  {'(skip)':>15s}"
-        elif s['success']:
-            row += f"  {s['top1']:>15s}"
+        result = scorecard[slug][label]
+        if result['success']:
+            row += f"  {result['top1']:>15s}"
         else:
-            row += f"  {('*' + (s['top1'] or '?')):>15s}"
+            row += f"  {('*' + (result['top1'] or '?')):>15s}"
     print(row)
 print("  (* = wrong answer)")
 
 # ============================================================
-# 4. NEIGHBORHOOD JACCARD OVERLAP
+# 4. NEIGHBORHOOD AGREEMENT
 # ============================================================
-print("\n" + "="*60)
-print("4. NEIGHBORHOOD JACCARD OVERLAP")
-print("="*60)
+print("\n" + "=" * 60)
+print("4. NEIGHBORHOOD AGREEMENT")
+print("=" * 60)
 
-probe_words = ['the', 'king', 'dog', 'good', 'France', 'water', 'big', 'run',
-               'she', 'one', 'day', 'time', 'new', 'old', 'man', 'world',
-               'just', 'make', 'think', 'back']
+k_neighbors = 5
+concept_neighbors = {}
 
-# Filter to probes that exist in all models
-valid_probes = []
-for word in probe_words:
-    if all(resolve_token(model_data[s], word) is not None for s in model_slugs):
-        valid_probes.append(word)
-
-print(f"  Using {len(valid_probes)} probe tokens present in all models")
-
-k_neighbors = 10
-jaccard_matrix = {}
-
-for i, s1 in enumerate(model_slugs):
-    for s2 in model_slugs[i+1:]:
-        m1, m2 = model_data[s1], model_data[s2]
-        jaccards = []
-
-        for word in valid_probes:
-            idx1 = resolve_token(m1, word)
-            idx2 = resolve_token(m2, word)
-
-            # Get top-k neighbors as decoded strings
-            cos1 = m1.normed_emb @ m1.normed_emb[idx1]
-            cos1[idx1] = -2
-            nn1 = set(m1.tokens[i].strip().lower() for i in np.argsort(cos1)[-k_neighbors:][::-1])
-
-            cos2 = m2.normed_emb @ m2.normed_emb[idx2]
-            cos2[idx2] = -2
-            nn2 = set(m2.tokens[i].strip().lower() for i in np.argsort(cos2)[-k_neighbors:][::-1])
-
-            jacc = len(nn1 & nn2) / len(nn1 | nn2) if nn1 | nn2 else 0
-            jaccards.append(jacc)
-
-        pair_key = f"{s1}_vs_{s2}"
-        mean_j = float(np.mean(jaccards))
-        jaccard_matrix[pair_key] = {
-            'model_a': s1,
-            'model_b': s2,
-            'mean_jaccard': mean_j,
-            'per_token': {w: round(j, 4) for w, j in zip(valid_probes, jaccards)},
-        }
-        print(f"  {m1.name:15s} vs {m2.name:15s}  mean Jaccard = {mean_j:.3f}")
-
-# ============================================================
-# 5. OUTLIER MIGRATION
-# ============================================================
-print("\n" + "="*60)
-print("5. OUTLIER MIGRATION (norm rank correlation)")
-print("="*60)
-
-# For shared vocab tokens, rank by norm in each model
-shared_tokens = list(shared_vocab.keys())
-print(f"  Using {len(shared_tokens)} shared-vocabulary tokens")
-
-norm_ranks = {}
 for slug in model_slugs:
-    m = model_data[slug]
-    indices = [shared_vocab[t][slug] for t in shared_tokens]
-    token_norms = m.norms[indices]
-    # Convert to ranks
-    norm_ranks[slug] = sp_stats.rankdata(token_norms)
+    model = model_data[slug]
+    resolved = probe_indices[slug]
+    inventory_idx = np.array([resolved[concept_id] for concept_id in inventory_ids], dtype=int)
+    inventory_vectors = model.normed_emb[inventory_idx]
+    inventory_cos = inventory_vectors @ inventory_vectors.T
+    concept_neighbors[slug] = {}
 
-outlier_correlations = {}
-for i, s1 in enumerate(model_slugs):
-    for s2 in model_slugs[i+1:]:
-        rho, pval = sp_stats.spearmanr(norm_ranks[s1], norm_ranks[s2])
-        pair_key = f"{s1}_vs_{s2}"
-        outlier_correlations[pair_key] = {
-            'model_a': s1,
-            'model_b': s2,
-            'spearman_rho': round(float(rho), 4),
-            'p_value': float(pval),
+    for probe_concept in COMPARISON_NEIGHBOR_PROBES:
+        probe_pos = inventory_ids.index(probe_concept)
+        cos = inventory_cos[probe_pos].copy()
+        cos[probe_pos] = -2
+        neighbor_pos = np.argsort(cos)[-k_neighbors:][::-1]
+        concept_neighbors[slug][probe_concept] = [inventory_ids[pos] for pos in neighbor_pos]
+
+print(f"  Using {len(COMPARISON_NEIGHBOR_PROBES)} probes inside a {len(inventory_ids)}-concept inventory")
+
+jaccard_matrix = {}
+for i, slug_a in enumerate(model_slugs):
+    for slug_b in model_slugs[i + 1:]:
+        jaccards = []
+        per_probe = {}
+        for probe_concept in COMPARISON_NEIGHBOR_PROBES:
+            neigh_a = set(concept_neighbors[slug_a][probe_concept])
+            neigh_b = set(concept_neighbors[slug_b][probe_concept])
+            score = len(neigh_a & neigh_b) / len(neigh_a | neigh_b) if neigh_a | neigh_b else 0.0
+            jaccards.append(score)
+            per_probe[probe_concept] = round(score, 4)
+
+        mean_score = float(np.mean(jaccards))
+        pair_key = f"{slug_a}_vs_{slug_b}"
+        jaccard_matrix[pair_key] = {
+            'model_a': slug_a,
+            'model_b': slug_b,
+            'mean_jaccard': mean_score,
+            'k_neighbors': k_neighbors,
+            'per_probe': per_probe,
         }
-        n1 = model_data[s1].name
-        n2 = model_data[s2].name
-        print(f"  {n1:15s} vs {n2:15s}  Spearman rho = {rho:.3f} (p={pval:.2e})")
+        print(f"  {model_data[slug_a].name:15s} vs {model_data[slug_b].name:15s}  mean Jaccard = {mean_score:.3f}")
 
 # ============================================================
 # SAVE ALL RESULTS
@@ -367,12 +287,13 @@ for i, s1 in enumerate(model_slugs):
 
 comparison = {
     'models': model_slugs,
-    'shared_vocab_size': len(shared_tokens),
+    'concept_inventory_size': len(inventory_ids),
+    'neighbor_probe_count': len(COMPARISON_NEIGHBOR_PROBES),
+    'neighbor_k': k_neighbors,
     'isotropy': isotropy,
     'ghost_universality': ghost_data,
     'analogy_scorecard': scorecard,
     'neighborhood_jaccard': jaccard_matrix,
-    'outlier_migration': outlier_correlations,
 }
 
 with open(OUT / 'comparison.json', 'w') as f:

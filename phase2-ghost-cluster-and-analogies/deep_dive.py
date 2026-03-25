@@ -17,9 +17,17 @@ import numpy as np
 import json
 import os
 import sys
+from scipy.cluster.hierarchy import fcluster, linkage
+from scipy.spatial.distance import squareform
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from common.models import load_model, add_model_arg, resolve_token
+from common.models import load_model, add_model_arg
+from common.probes import (
+    PHASE2_ANALOGIES,
+    PHASE2_NEIGHBOR_PROBES,
+    token_for_concept,
+    validate_model_probes,
+)
 
 parser = argparse.ArgumentParser(description="Phase 2: Ghost clusters, analogies, and neighbors")
 add_model_arg(parser)
@@ -27,12 +35,18 @@ args = parser.parse_args()
 
 m = load_model(args.model)
 emb, tok, tokens, labels, norms, normed_emb = m.emb, m.tokenizer, m.tokens, m.labels, m.norms, m.normed_emb
+concept_indices = validate_model_probes(m)
 
 print(f"Embedding matrix: {m.vocab_size} tokens x {m.hidden_dim} dimensions")
 
 # Output directory
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results', m.slug)
 os.makedirs(OUT, exist_ok=True)
+
+
+def remove_if_exists(path):
+    if os.path.exists(path):
+        os.remove(path)
 
 
 def nearest_neighbors(idx, k=15):
@@ -43,16 +57,9 @@ def nearest_neighbors(idx, k=15):
     return [(int(i), float(cos[i]), float(norms[i])) for i in nn]
 
 
-def analogy(a_str, b_str, c_str, k=10):
+def analogy(a_idx, b_idx, c_idx, k=10):
     """a is to b as c is to ? Returns top-k results."""
-    ia = resolve_token(m, a_str)
-    ib = resolve_token(m, b_str)
-    ic = resolve_token(m, c_str)
-    if None in (ia, ib, ic):
-        missing = [s for s, i in [(a_str, ia), (b_str, ib), (c_str, ic)] if i is None]
-        print(f"    (skipping: tokens not found: {missing})")
-        return [], (ia, ib, ic)
-
+    ia, ib, ic = a_idx, b_idx, c_idx
     vec = emb[ib] - emb[ia] + emb[ic]
     vec_norm = np.linalg.norm(vec)
     cos = (emb @ vec) / (norms * vec_norm + 1e-10)
@@ -63,14 +70,7 @@ def analogy(a_str, b_str, c_str, k=10):
 
 
 def find_ghost_cluster(threshold=0.95, percentile=5):
-    """Dynamically find ghost cluster: low-norm tokens with high mutual cosine.
-
-    Strategy:
-    1. Take the bottom percentile of tokens by norm
-    2. Compute pairwise cosine among them
-    3. Find connected components where cosine > threshold
-    4. Return the largest tight cluster
-    """
+    """Find a low-norm cluster that satisfies a complete-linkage cosine floor."""
     cutoff = np.percentile(norms, percentile)
     candidates = np.where(norms <= cutoff)[0]
 
@@ -79,42 +79,26 @@ def find_ghost_cluster(threshold=0.95, percentile=5):
 
     cand_normed = normed_emb[candidates]
     cos_matrix = cand_normed @ cand_normed.T
+    dist_matrix = np.clip(1.0 - cos_matrix, 0.0, 2.0)
+    condensed = squareform(dist_matrix, checks=False)
+    dendrogram = linkage(condensed, method='complete')
+    cluster_ids = fcluster(dendrogram, t=1.0 - threshold, criterion='distance')
 
-    # Build adjacency and find connected components via BFS
-    adj = cos_matrix > threshold
-    np.fill_diagonal(adj, False)
-    visited = set()
-    components = []
+    best_cluster = []
+    for cluster_id in np.unique(cluster_ids):
+        members = np.where(cluster_ids == cluster_id)[0]
+        if len(members) > len(best_cluster):
+            best_cluster = members.tolist()
 
-    for i in range(len(candidates)):
-        if i in visited:
-            continue
-        # BFS
-        component = []
-        queue = [i]
-        while queue:
-            node = queue.pop(0)
-            if node in visited:
-                continue
-            visited.add(node)
-            component.append(node)
-            neighbors = np.where(adj[node])[0]
-            for n in neighbors:
-                if n not in visited:
-                    queue.append(n)
-        components.append(component)
-
-    if not components:
+    if len(best_cluster) < 2:
         return [], np.array([])
 
-    # Return largest component
-    largest = max(components, key=len)
-    ghost_indices = candidates[largest].tolist()
-    ghost_indices.sort()
-
-    # Compute the cosine matrix for just the ghost cluster
+    ghost_indices = sorted(candidates[best_cluster].tolist())
     ghost_normed = normed_emb[ghost_indices]
     ghost_cos = ghost_normed @ ghost_normed.T
+    min_pairwise = ghost_cos[np.triu_indices(len(ghost_indices), k=1)].min()
+    if min_pairwise < threshold:
+        return [], np.array([])
 
     return ghost_indices, ghost_cos
 
@@ -127,11 +111,23 @@ print("1. GHOST CLUSTER — tokens that collapsed to similar vectors")
 print("="*60)
 
 ghost_idx, ghost_cos_matrix = find_ghost_cluster()
+ghost_stats = {
+    'mean': None,
+    'min': None,
+    'max': None,
+    'diameter': None,
+}
 
 if len(ghost_idx) >= 2:
     ghost_norms = norms[ghost_idx]
     triu = np.triu_indices(len(ghost_idx), k=1)
     cos_all = ghost_cos_matrix[triu]
+    ghost_stats = {
+        'mean': float(cos_all.mean()),
+        'min': float(cos_all.min()),
+        'max': float(cos_all.max()),
+        'diameter': float(1.0 - cos_all.min()),
+    }
 
     # Find newline token dynamically
     nl_tokens = tok.encode("\n")
@@ -146,7 +142,7 @@ if len(ghost_idx) >= 2:
         cos_excl_nl = cos_no_nl[triu_no_nl]
 
         nl_pos = ghost_idx.index(nl_idx)
-        nl_cos_to_ghosts = float(ghost_cos_matrix[nl_pos, :].mean())
+        nl_cos_to_ghosts = float(ghost_cos_matrix[nl_pos, np.arange(len(ghost_idx)) != nl_pos].mean())
 
         print(f"  {len(ghost_idx)} tokens in ghost cluster, pairwise cosine {cos_excl_nl.mean():.3f} (excluding newline)")
         print(f"  Newline (idx {nl_idx}) broke free: cosine {nl_cos_to_ghosts:.3f} to siblings, norm {norms[nl_idx]:.3f}")
@@ -157,12 +153,13 @@ if len(ghost_idx) >= 2:
 
     print(f"  Token index range: {ghost_idx[0]}-{ghost_idx[-1]}")
     print(f"  Mean norm: {ghost_norms.mean():.3f} (vs global mean {norms.mean():.3f})")
+    print(f"  Tightness: min cosine {ghost_stats['min']:.3f}, diameter {ghost_stats['diameter']:.3f}")
 
     # Show a few example ghost tokens
     examples = ghost_idx[:5]
     print(f"  Examples: {', '.join(repr(labels[i]) for i in examples)}")
 else:
-    print(f"  No ghost cluster found (fewer than 2 tightly-clustered low-norm tokens)")
+    print(f"  No ghost cluster found under the complete-linkage cosine threshold")
     nl_idx = None
     nl_in_ghost = False
 
@@ -192,23 +189,11 @@ print("\n" + "="*60)
 print("3. NEAREST NEIGHBORS — the model's semantic taxonomy")
 print("="*60)
 
-probe_words = [
-    ('the', 'determiners/pronouns'),
-    ('at', 'prepositions'),
-    ('king', 'royalty'),
-    ('queen', 'royalty (gendered)'),
-    ('dog', 'animals'),
-    ('Python', 'programming languages'),
-]
-
 nn_results = {}
-for word, expected in probe_words:
-    idx = resolve_token(m, word)
-    if idx is None:
-        print(f"  {word:12s} -> (not found as single token)")
-        continue
+for concept_id, expected in PHASE2_NEIGHBOR_PROBES:
+    idx = concept_indices[concept_id]
     neighbors = nearest_neighbors(idx, k=15)
-    nn_results[tokens[idx]] = neighbors
+    nn_results[concept_id] = {'idx': int(idx), 'neighbors': neighbors}
     top3 = neighbors[:3]
     print(f"  {repr(tokens[idx]):12s} -> {repr(labels[top3[0][0]])}, {repr(labels[top3[1][0]])}, {repr(labels[top3[2][0]])} ({expected})")
 
@@ -221,17 +206,13 @@ print("\n" + "="*60)
 print("4. EMBEDDING ANALOGIES — linear relationships in raw embeddings")
 print("="*60)
 
-analogy_tests = [
-    ('king', 'queen', 'man', 'gender'),
-    ('dog', 'dogs', 'cat', 'pluralization'),
-    ('France', 'Paris', 'Japan', 'capital city'),
-    ('big', 'bigger', 'small', 'comparative'),
-]
-
 analogy_results = {}
-for a, b, c, label in analogy_tests:
-    result_list, (ia, ib, ic) = analogy(a, b, c, k=5)
-    key = f"{a}:{b}::{c}:?"
+for label, a_concept, b_concept, c_concept, _expected_concept in PHASE2_ANALOGIES:
+    ia = concept_indices[a_concept]
+    ib = concept_indices[b_concept]
+    ic = concept_indices[c_concept]
+    result_list, (ia, ib, ic) = analogy(ia, ib, ic, k=5)
+    key = f"{a_concept}:{b_concept}::{c_concept}:?"
     analogy_results[key] = result_list
     if result_list:
         top = result_list[0]
@@ -307,10 +288,11 @@ results = {
         'count': len(ghost_idx),
         'indices': ghost_idx,
         'pairwise_cosine': {
-            'mean': float(ghost_cos_matrix[np.triu_indices(len(ghost_idx), k=1)].mean()) if len(ghost_idx) >= 2 else None,
-            'min': float(ghost_cos_matrix[np.triu_indices(len(ghost_idx), k=1)].min()) if len(ghost_idx) >= 2 else None,
-            'max': float(ghost_cos_matrix[np.triu_indices(len(ghost_idx), k=1)].max()) if len(ghost_idx) >= 2 else None,
+            'mean': ghost_stats['mean'],
+            'min': ghost_stats['min'],
+            'max': ghost_stats['max'],
         },
+        'diameter': ghost_stats['diameter'],
         'mean_norm': float(norms[ghost_idx].mean()) if ghost_idx else None,
         'newline_idx': nl_idx,
         'newline_in_ghost': nl_in_ghost,
@@ -320,11 +302,15 @@ results = {
         for i, c, n in nl_neighbors
     ] if nl_neighbors else [],
     'nearest_neighbors': {
-        token_str: [
+        concept_id: {
+            'token': token_for_concept(m.slug, concept_id),
+            'center_idx': data['idx'],
+            'neighbors': [
             {'idx': i, 'cosine': c, 'norm': n, 'token': repr(labels[i])}
-            for i, c, n in neighbors
-        ]
-        for token_str, neighbors in nn_results.items()
+            for i, c, n in data['neighbors']
+            ],
+        }
+        for concept_id, data in nn_results.items()
     },
     'analogies': {
         key: [{'idx': i, 'cosine': c, 'token': repr(labels[i])} for i, c in result_list]
@@ -341,12 +327,11 @@ with open(os.path.join(OUT, 'results.json'), 'w') as f:
     json.dump(results, f, indent=2)
 
 # Save ghost cluster cosine matrix with reference tokens for heatmap
-ref_words = ['the', 'dog', 'Python']
+ref_words = ['the', 'dog', 'python']
 ref_tokens_map = {}
-for word in ref_words:
-    idx = resolve_token(m, word)
-    if idx is not None:
-        ref_tokens_map[tokens[idx]] = idx
+for concept_id in ref_words:
+    idx = concept_indices[concept_id]
+    ref_tokens_map[token_for_concept(m.slug, concept_id)] = idx
 
 # Also try to add a double-newline if it exists
 nn_token = tok.encode("\n\n")
@@ -363,14 +348,18 @@ if ghost_idx:
     expanded_labels = [labels[i] for i in ghost_idx] + list(ref_tokens_map.keys())
     with open(os.path.join(OUT, 'ghost_labels.json'), 'w') as f:
         json.dump({'labels': expanded_labels, 'n_ghost': len(ghost_idx)}, f)
+else:
+    remove_if_exists(os.path.join(OUT, 'ghost_cosine_matrix.npy'))
+    remove_if_exists(os.path.join(OUT, 'ghost_labels.json'))
+    remove_if_exists(os.path.join(OUT, 'ghost_heatmap.html'))
 
 # Save analogy vectors for PCA projection
 analogy_data = {}
-for a, b, c, label in analogy_tests:
-    ia = resolve_token(m, a)
-    ib = resolve_token(m, b)
-    ic = resolve_token(m, c)
-    key = f"{a}:{b}::{c}:?"
+for label, a_concept, b_concept, c_concept, _expected_concept in PHASE2_ANALOGIES:
+    ia = concept_indices[a_concept]
+    ib = concept_indices[b_concept]
+    ic = concept_indices[c_concept]
+    key = f"{a_concept}:{b_concept}::{c_concept}:?"
     top_result = analogy_results.get(key, [])
     id_idx = top_result[0][0] if top_result else None
     if None not in (ia, ib, ic, id_idx):
@@ -384,13 +373,13 @@ with open(os.path.join(OUT, 'analogy_vectors.json'), 'w') as f:
 
 # Save nearest neighbor data for visualization
 nn_viz_data = {}
-for token_str, neighbors in nn_results.items():
-    idx = resolve_token(m, token_str.strip())
-    if idx is not None:
-        nn_viz_data[token_str] = {
-            'center': {'idx': int(idx), 'label': labels[idx]},
-            'neighbors': [{'idx': i, 'cosine': c, 'label': labels[i]} for i, c, _ in neighbors[:5]],
-        }
+for concept_id, data in nn_results.items():
+    idx = data['idx']
+    nn_viz_data[concept_id] = {
+        'token': token_for_concept(m.slug, concept_id),
+        'center': {'idx': int(idx), 'label': labels[idx]},
+        'neighbors': [{'idx': i, 'cosine': c, 'label': labels[i]} for i, c, _ in data['neighbors'][:5]],
+    }
 with open(os.path.join(OUT, 'nn_viz_data.json'), 'w') as f:
     json.dump(nn_viz_data, f)
 
