@@ -1,13 +1,14 @@
-# Data files (reproducible from scripts)
+# Generated research outputs (reproducible from scripts)
+**/results/
 *.npy
-*.json
-!package.json
-
-# Visualizations (reproducible from scripts)
 *.html
 
-# Generated results (per-model subdirs)
-**/results/
+# Local JSON artifacts produced by analysis scripts
+comparison.json
+results.json
+ghost_labels.json
+analogy_vectors.json
+nn_viz_data.json
 
 # Python
 __pycache__/
