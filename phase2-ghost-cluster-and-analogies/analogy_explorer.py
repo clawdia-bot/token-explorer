@@ -23,12 +23,16 @@ add_model_arg(parser)
 parser.add_argument('--port', type=int, default=8765, help="Server port (default: 8765)")
 args = parser.parse_args()
 
-# Global state — replaced when model is switched
-state = {}
+# Global state
+state = {'cache': {}}
 
 
 def load_into_state(slug):
-    m = load_model(slug)
+    if slug in state['cache']:
+        m = state['cache'][slug]
+    else:
+        m = load_model(slug)
+        state['cache'][slug] = m
     state['model'] = m
     state['slug'] = slug
 

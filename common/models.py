@@ -24,6 +24,11 @@ MODEL_REGISTRY = {
 }
 
 
+def model_slugs() -> list[str]:
+    """Return supported model slugs in registry order."""
+    return list(MODEL_REGISTRY.keys())
+
+
 @dataclass
 class ModelData:
     name: str               # Display name: "GPT-2", "Pythia-70m"
@@ -161,6 +166,6 @@ def add_model_arg(parser: argparse.ArgumentParser):
     """Add --model argument to an argparse parser."""
     parser.add_argument(
         '--model', default='gpt2',
-        choices=list(MODEL_REGISTRY.keys()),
+        choices=model_slugs(),
         help=f"Model to analyze (default: gpt2)",
     )

@@ -49,6 +49,10 @@ Each phase directory contains:
 - Python scripts to reproduce the experiments
 - Interactive HTML visualizations where applicable
 
+For Phases 1 and 2, there are also top-level browser pages that let you switch between precomputed model outputs without rerunning analysis:
+- `phase1-norms-and-structure/phase1_browser.html`
+- `phase2-ghost-cluster-and-analogies/phase2_browser.html`
+
 ## Usage
 
 Phases 1, 2, and the cross-model comparison support model selection via `--model`:
@@ -58,10 +62,18 @@ Phases 1, 2, and the cross-model comparison support model selection via `--model
 poetry run python phase1-norms-and-structure/explore.py --model gpt2
 poetry run python phase1-norms-and-structure/charts.py --model gpt2
 poetry run python phase1-norms-and-structure/visualize.py --model gpt2
+poetry run python phase1-norms-and-structure/browser.py
+
+# Precompute cached UMAP views for every supported model once
+poetry run python phase1-norms-and-structure/visualize.py --all
+
+# Faster exploratory UMAP for a larger model
+poetry run python phase1-norms-and-structure/visualize.py --model qwen2.5-0.5b --sample 25000
 
 # Run Phase 2 analysis
 poetry run python phase2-ghost-cluster-and-analogies/deep_dive.py --model gpt2
 poetry run python phase2-ghost-cluster-and-analogies/charts.py --model gpt2
+poetry run python phase2-ghost-cluster-and-analogies/browser.py
 
 # Interactive explorers (heuristic lookup, exploratory only)
 poetry run python phase2-ghost-cluster-and-analogies/analogy_explorer.py
@@ -73,6 +85,8 @@ poetry run python cross-model-comparison/dashboard.py
 ```
 
 Available models: `gpt2`, `pythia-70m`, `smollm2-135m`, `qwen2.5-0.5b`
+
+Phase 1 UMAP output is cached per model and sample size in `phase1-norms-and-structure/results/<model>/`. Once a model's UMAP has been computed, the browser and standalone HTML can be reopened without recomputing it. For larger vocabularies like Qwen, a sampled UMAP is often the better interactive default.
 
 ## Requirements
 
