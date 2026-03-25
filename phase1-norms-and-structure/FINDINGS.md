@@ -4,27 +4,25 @@
 
 ## Summary
 
-The embedding matrix is the model's first opinion about language — assigned before any attention, before any context. These 768-dimensional vectors are where the model places its raw priors about what each token *is*. This phase measures the geometry of that space: how tokens are distributed by distance, direction, and dimensionality.
+The embedding matrix is the model's first opinion about language — assigned before any attention or context. This phase measures the geometry of GPT-2's token space: how norms, directions, and principal components organize the vocabulary. The current framing is deliberately conservative: the generic metric is **token rank**, not frequency. For GPT-2, token rank is still frequency-like because of how the BPE vocabulary was built, but that interpretation does not automatically transfer to other models.
 
-## 1. Norms and Frequency
+## 1. Norms and Token Rank
 
-Token embedding norm (distance from origin) correlates with rarity.
+Token embedding norm (distance from the origin) correlates with GPT-2 token rank.
 
 | Token | Norm | Note |
 |-------|------|------|
 | ` at` | 2.454 (min) | Extremely common preposition |
 | ` in` | 2.465 | Extremely common preposition |
-| ` the` | 2.670 | Most common English word |
+| ` the` | 2.670 | Very early GPT-2 token rank |
 | `SPONSORED` | 6.316 (max) | Rare advertising label |
 | `soDeliveryDate` | 6.215 | E-commerce artifact |
 
-**Correlation (BPE index vs norm):** r=0.409. BPE token indices roughly reflect merge frequency, so rarer tokens have higher norms. Token length vs norm: r=-0.166 (shorter tokens, which tend to be more frequent, have lower norms).
-
-**But the origin is arbitrary.** See section 4.
+**Correlation (token rank vs norm):** r=0.409. In GPT-2, earlier-ranked tokens tend to have lower norms, later-ranked tokens higher norms. Token length vs norm is r=-0.166, which is consistent with short, common fragments appearing earlier in the GPT-2 vocabulary.
 
 ## 2. Anisotropy
 
-Mean pairwise cosine similarity is **0.269** (5K random token sample). This is moderate anisotropy — embeddings prefer the same hemisphere but don't collapse into a narrow cone. For reference, an isotropic (uniform) sphere would give ~0, and severe representation degeneration pushes above 0.5.
+Mean pairwise cosine similarity is **0.269** on a 5K random token sample. GPT-2 is moderately anisotropic: embeddings prefer the same hemisphere, but the space is far from collapsed.
 
 ## 3. Effective Dimensionality
 
@@ -37,30 +35,28 @@ Mean pairwise cosine similarity is **0.269** (5K random token sample). This is m
 | Dims for 99% variance | 712 |
 | Top PC explains | 1.81% |
 
-No single dimension dominates. Despite the moderate anisotropy, the space genuinely uses most of its 768 dimensions.
+No single direction dominates. Even with moderate anisotropy, GPT-2 uses most of its 768 dimensions.
 
 ## 4. Origin vs Centroid
 
-The zero vector in R^768 has no special meaning — it's where the weights were initialized, not a linguistically meaningful landmark. To test whether the norm-frequency relationship is real or an artifact of centroid displacement, we re-ran the same correlations measuring distance from the centroid (mean embedding) instead of the origin.
+The zero vector in R^768 has no linguistic meaning. To test whether the token-rank effect is real or just a consequence of where the cloud happens to sit relative to the origin, we re-ran the same correlations from the centroid.
 
 | Correlation | From origin | From centroid |
 |-------------|-------------|---------------|
-| BPE index vs distance | r=0.409 | r=0.207 |
+| Token rank vs distance | r=0.409 | r=0.207 |
 | Token length vs distance | r=-0.166 | r=-0.256 |
 
-**The BPE-frequency correlation halves** when measured from the centroid. This means the origin-based measurement amplifies the effect — common tokens dominate the mean and pull it toward them, inflating the apparent correlation. The radial structure is real (r=0.207 is still significant) but weaker than the origin-based number suggests.
+**The token-rank correlation roughly halves** when measured from the centroid. That means the origin-based number is real but inflated by centroid displacement. In GPT-2's case, the interpretation is still frequency-like because token rank reflects the tokenizer's merge order, but the safer claim is about token rank first and frequency only as GPT-2-specific context.
 
-The token-length correlation actually **strengthens** from the centroid (-0.166 to -0.256), suggesting that short tokens (which tend to be frequent) are genuinely closer to the center of the embedding cloud, not just closer to an arbitrary origin.
+The token-length correlation strengthens from the centroid (-0.166 to -0.256), suggesting that short tokens are genuinely closer to the middle of the embedding cloud, not just closer to an arbitrary origin.
 
-**Closest to centroid:** `' externalToEVA'` (dist=1.531) — a "glitch token" that barely moved from initialization. Being near the centroid means "generic/undertrained," not "semantically central."
-
-**Farthest from centroid:** `'SPONSORED'` (dist=5.569) — the same token that has the highest origin-based norm. This outlier is robust to reference point.
-
-**Most dissimilar from mean direction:** `' the'` (cosine to mean=0.135) — more directionally distinct from the average token than any other. Note: this measures distance from the mean, not from every individual token.
+**Closest to centroid:** `' externalToEVA'` (dist=1.531)  
+**Farthest from centroid:** `'SPONSORED'` (dist=5.569)  
+**Most dissimilar from mean direction:** `' the'` (cosine to mean=0.135)
 
 ## 5. Token Categories
 
-16 categories classified by script and token type. Non-Latin scripts have higher norms, reflecting their rarity in GPT-2's English-dominated training data.
+Sixteen categories were classified by script and token type. Non-Latin scripts have higher norms in GPT-2, which fits its English-dominant training mix.
 
 | Category | Count | Mean Norm |
 |----------|-------|-----------|
@@ -81,21 +77,21 @@ The token-length correlation actually **strengthens** from the centroid (-0.166 
 | hebrew | 11 | 4.085 |
 | korean | 9 | 4.364 |
 
-Most distant category pair: cyrillic x number (cosine=0.628).
+Most distant category pair: `cyrillic x number` (cosine 0.628).
 
 ## Key Takeaways
 
-1. **Norm encodes rarity**, but the effect is amplified when measured from the arbitrary origin. From the centroid, the correlation halves. The structure is real but overstated by naive measurement.
-2. **The space is genuinely high-dimensional** (428-587 effective dims out of 768). No 2D visualization can capture this — UMAP shows neighborhoods, not the space.
-3. **Moderate anisotropy** (mean cosine 0.269). Embeddings cluster directionally but aren't degenerate.
-4. **"Near the centroid" means undertrained**, not semantically central. Glitch tokens like `' externalToEVA'` live there.
-5. **`' the'` is most dissimilar from the mean direction** (cosine to mean=0.135, lowest of any token). This measures distance from the average, not from every other token individually.
+1. **GPT-2 norm tracks token rank.** The effect is strong from the origin and weaker from the centroid, so the safe claim is about token rank rather than universal frequency.
+2. **The space is genuinely high-dimensional.** GPT-2 uses hundreds of effective dimensions, so any 2D view is a projection tool, not a faithful map.
+3. **GPT-2 is moderately anisotropic.** Mean cosine 0.269 is substantial but not degenerate.
+4. **Near the centroid means undertrained or generic.** Tokens like `' externalToEVA'` sit there because they barely moved, not because they are semantically central.
+5. **`' the'` is directionally unusual.** It is the most anti-average token by cosine to the mean direction, which is a different claim from being far from every other token.
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `explore.py` | Analysis: norms, PCA, anisotropy, centroid comparison, categories |
+| `explore.py` | Analysis: norms, token rank, PCA, anisotropy, centroid comparison, categories |
 | `visualize.py` | UMAP 2D interactive Plotly visualization with token search |
-| `charts.py` | 4-panel chart dashboard (norm distribution, PCA scree, anisotropy, categories) |
+| `charts.py` | 4-panel chart dashboard (distance distributions, PCA scree, anisotropy, categories) |
 | `tokenutils.py` | Shared token display and categorization (16 categories, handles byte tokens) |

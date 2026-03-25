@@ -4,67 +4,83 @@
 
 ## Summary
 
-Phase 1 measured global structure. This phase zooms in on specific phenomena: dead tokens that collapsed to identical vectors, raw analogies that work without fine-tuning, and a nearest-neighbor taxonomy that mirrors human intuition.
+Phase 1 measured global geometry. This phase zooms in on concrete local phenomena: a tight low-norm ghost cluster, newline as a meaningful exception, nearest-neighbor structure, and raw embedding analogies. The saved research outputs now use strict exact probes; the browser explorers remain heuristic and exploratory.
 
-## 1. The Ghost Cluster: Control Characters Are Identical
+## 1. The Ghost Cluster: A Tight Low-Norm Collapse
 
-Tokens 188-221 (ASCII control characters, byte-level tokens) form a tight cluster with pairwise cosine **0.949** (excluding newline). They're essentially the same vector with minor perturbations.
+GPT-2 has a **59-token ghost cluster** with mean pairwise cosine **0.995**, minimum pairwise cosine **0.953**, and diameter **0.047** under a complete-linkage criterion. This is a strong claim: every pair inside the reported cluster is highly similar, not just connected through a chain.
 
-**The Newline Exception:** Token 198 (`\n`) broke free with cosine **0.033** to its siblings and norm 2.688. Newline is semantically meaningful — it separates sentences, paragraphs, code blocks. The model learned this.
+Representative examples include byte/control-like tokens such as `À`, `Á`, `õ`, `ö`, and `÷`.
 
-Control characters almost never appear in training data. No gradient signal to differentiate them — they collapsed to near-identical vectors. The model's "I don't know what this is" embedding. (See also Phase 1's finding that `' externalToEVA'` is closest to the centroid — same phenomenon.)
+These tokens sit at low norm relative to the full vocabulary:
+
+- Ghost-cluster mean norm: **3.092**
+- Global mean norm: **3.959**
+
+The picture is consistent with undertrained or weakly differentiated tokens collapsing into a near-shared vector.
 
 ## 2. Newline's Identity
 
-Newline's nearest neighbors reveal what the model thinks it means:
+Newline is **not** part of the ghost cluster.
 
-1. `'\n\n'` (double newline)
-2. `' The'` (sentence starter)
-3. `'<|endoftext|>'` (document boundary)
+Its nearest neighbors are:
 
-Newline is grouped with **things that start new context**, not with whitespace. Compare: newline vs space cosine is only 0.328 — they serve different roles despite both being "whitespace."
+1. `'\n\n'`
+2. `' The'`
+3. `'<|endoftext|>'`
+
+That is a strong sign that GPT-2 treats newline as a boundary or context-reset marker rather than generic whitespace.
 
 ## 3. Nearest Neighbors: The Model's Taxonomy
+
+Using strict exact probe tokens:
 
 | Token | Top Neighbors | Category |
 |-------|---------------|----------|
 | `' the'` | `' a'`, `' an'`, `' it'` | Determiners/pronouns |
 | `' at'` | `' in'`, `' on'`, `' with'` | Prepositions |
 | `' king'` | `' kings'`, `' King'`, `' queen'` | Royalty |
+| `' queen'` | `' queens'`, `' Queen'`, `' king'` | Royalty (gendered) |
 | `' dog'` | `' dogs'`, `' Dog'`, `'Dog'` | Animals |
 | `' Python'` | `' python'`, `'Python'`, `'python'` | Programming languages |
 
-Clean semantic clustering exists in the static embeddings — before any attention or context. The embedding layer's priors already organize tokens by grammatical and semantic role.
+The static embeddings already carry clean local structure before any attention is applied.
 
 ## 4. Embedding Analogies Work
 
-Raw embedding analogies — no fine-tuning, no task-specific training:
+GPT-2 still passes the core raw-embedding analogies:
 
 | Analogy | Top Result | Cosine |
 |---------|------------|--------|
 | king:queen::man:? | **` woman`** | 0.662 |
 | dog:dogs::cat:? | **` cats`** | 0.817 |
-| France:Paris::Japan:? | **` Tokyo`** | 0.688 |
+| france:paris::japan:? | **` Tokyo`** | 0.688 |
 | big:bigger::small:? | **` smaller`** | 0.797 |
 
-The embedding layer has learned linear relationships between concepts — gender, pluralization, geography, comparison — before any attention. These relationships are imposed by backpropagation from the transformer layers above.
-
-**Note:** Phase 4 will test whether this holds across models. Spoiler: it's complicated.
+These are static vocabulary vectors, not in-context activations. The result is real for GPT-2, but later phases and the curated cross-model comparison show that this behavior is not universal across all models.
 
 ## 5. Weird Tokens: Training Data Archaeology
 
-High-norm tokens include clear training data artifacts: `soDeliveryDate` (norm 6.22), `BuyableInstoreAndOnline` (norm 5.74), `SPONSORED` (norm 6.32). These exist because BPE merged frequently-occurring strings from e-commerce sites and Reddit.
+High-norm outliers still look like dataset artifacts:
 
-Mean pairwise cosine among weird tokens: **0.459** (vs global 0.269). The model groups "things I barely saw in training" into a distinct region of embedding space.
+- `SPONSORED`
+- `soDeliveryDate`
+- `BuyableInstoreAndOnline`
 
-Some weird tokens like `' externalToEVA'` collapsed to ghost-cluster norms (~3.09) while their extensions (`' externalToEVAOnly'`, norm 5.18) have normal norms. The base fragments are dead; the extensions got enough training signal to differentiate.
+But the stronger old claim that weird tokens form a sharply coherent region does **not** hold up well under the refreshed numbers:
+
+- Outlier pairwise cosine: **0.279**
+- Global mean cosine: **0.270**
+
+So the safer interpretation is that GPT-2 contains obvious rare or artifact-heavy outliers, not that all weird tokens cluster together tightly.
 
 ## Key Takeaways
 
-1. **Untrained tokens collapse.** Ghost cluster and glitch tokens converge to near-identical vectors near the centroid.
-2. **Meaningful tokens differentiate.** Even `\n`, a control character, breaks free when it carries semantic weight.
-3. **Analogies work raw.** Linear relationships (gender, number, geography) exist in static embeddings without any task-specific training.
-4. **Nearest neighbors are clean.** The model's taxonomy mirrors human intuition: prepositions cluster with prepositions, royalty with royalty.
+1. **GPT-2 has a real ghost cluster.** Under a complete-linkage threshold, 59 low-norm tokens remain tightly collapsed.
+2. **Newline is semantically distinct.** It behaves like a boundary token, not a dead control token.
+3. **Static analogies are genuinely present in GPT-2.** The classic examples still work in the raw embedding matrix.
+4. **Nearest-neighbor structure is clean.** Grammar and lexical categories appear locally in the embedding space before context.
+5. **Outlier tokens are real, but their group structure is weaker than it first looked.** The artifacts are obvious individually; the collective cluster claim needed to be softened.
 
 ## Files
 
@@ -72,6 +88,6 @@ Some weird tokens like `' externalToEVA'` collapsed to ghost-cluster norms (~3.0
 |------|-------------|
 | `deep_dive.py` | Analysis: ghost cluster, analogies, nearest neighbors, weird tokens |
 | `charts.py` | Ghost cluster heatmap with reference tokens |
-| `analogy_explorer.py` | Interactive analogy explorer (localhost:8765) |
-| `neighbor_explorer.py` | Interactive nearest neighbor explorer (localhost:8766) |
-| `results.json` | Detailed data: full neighbor lists, analogy results, ghost cluster stats |
+| `analogy_explorer.py` | Interactive analogy explorer (heuristic lookup, localhost:8765) |
+| `neighbor_explorer.py` | Interactive nearest neighbor explorer (heuristic lookup, localhost:8766) |
+| `results.json` | Detailed data: exact-probe neighbor lists, analogy results, ghost cluster stats |
