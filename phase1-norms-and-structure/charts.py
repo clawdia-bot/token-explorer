@@ -12,11 +12,18 @@ Usage: poetry run python phase1-norms-and-structure/charts.py [--model MODEL]
 """
 
 import argparse
+import json
+from pathlib import Path
+
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import json
-import numpy as np
-from pathlib import Path
+
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from common.html import inject_dark_mode
 
 parser = argparse.ArgumentParser(description="Phase 1: Embedding structure charts")
 parser.add_argument('--model', default='gpt2', help="Model slug (must have run explore.py first)")
@@ -178,5 +185,7 @@ fig.update_layout(
 )
 
 out_path = BASE / 'phase1_charts.html'
-fig.write_html(str(out_path))
+html = fig.to_html(include_plotlyjs=True, full_html=True)
+with open(out_path, 'w') as f:
+    f.write(inject_dark_mode(html))
 print(f"Saved to {out_path}")

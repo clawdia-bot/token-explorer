@@ -51,8 +51,12 @@ html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#151515">
 <title>Phase 2 Browser</title>
 <style>
+  :root {{ color-scheme: dark; }}
+  html {{ background:#151515; }}
   body {{ background:#151515; color:#eee; font-family:'SF Mono','Consolas',monospace; margin:0; padding:24px; }}
   h1 {{ margin:0 0 8px 0; font-size:28px; }}
   .sub {{ color:#888; margin-bottom:20px; }}

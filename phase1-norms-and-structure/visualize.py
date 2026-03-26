@@ -15,6 +15,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from common.html import inject_dark_mode
 from common.models import add_model_arg, load_model, model_slugs
 from common.tokenutils import categorize
 
@@ -145,7 +146,7 @@ def build_html(coords, labels, norms, categories, indices, model_name, sample_no
 })();
 </script>
 """
-    return html_str.replace('</body>', search_ui + '</body>')
+    return inject_dark_mode(html_str.replace('</body>', search_ui + '</body>'))
 
 
 def cache_paths(out_dir):

@@ -108,8 +108,12 @@ HTML_PAGE = """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#1e1e1e">
 <title>Embedding Analogy Explorer</title>
 <style>
+  :root { color-scheme: dark; }
+  html { background: #1e1e1e; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: #1e1e1e; color: #eee; font-family: 'SF Mono', 'Consolas', monospace;

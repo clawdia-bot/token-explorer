@@ -18,6 +18,12 @@ from pathlib import Path
 import numpy as np
 import plotly.graph_objects as go
 
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from common.html import inject_dark_mode
+
 DATA = Path(__file__).parent / 'results'
 if not (DATA / 'comparison.json').exists():
     raise FileNotFoundError("No comparison.json found — run compare.py first")
@@ -213,6 +219,8 @@ html_parts.append(f"""<!DOCTYPE html>
 <meta charset="utf-8">
 <title>Cross-Model Comparison Dashboard</title>
 <style>
+  :root {{ color-scheme: dark; }}
+  html {{ background: #151515; }}
   body {{ background: #1e1e1e; color: #eee; font-family: 'SF Mono', 'Consolas', monospace; padding: 20px; }}
   h1 {{ text-align: center; margin-bottom: 8px; }}
   .subtitle {{ text-align: center; color: #888; font-size: 14px; margin-bottom: 30px; }}
@@ -252,6 +260,6 @@ html_parts.append('</body></html>')
 
 out_path = DATA / 'comparison_dashboard.html'
 with open(out_path, 'w') as f:
-    f.write('\n'.join(html_parts))
+    f.write(inject_dark_mode('\n'.join(html_parts)))
 
 print(f"Dashboard saved to {out_path}")
