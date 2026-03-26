@@ -22,6 +22,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from common.html import inject_dark_mode
+from common.viz import HEATMAP_SEPARATOR, SOFT_HEATMAP_SCALE
 
 parser = argparse.ArgumentParser(description="Phase 2: Ghost cluster heatmap")
 parser.add_argument('--model', default='gpt2', help="Model slug (must have run deep_dive.py first)")
@@ -79,27 +80,22 @@ fig = go.Figure(data=go.Heatmap(
     z=cos_matrix,
     x=display_labels,
     y=display_labels,
-    colorscale=[
-        [0.0, '#1a1a2e'],
-        [0.2, '#16213e'],
-        [0.4, '#0f3460'],
-        [0.6, '#e94560'],
-        [0.8, '#fbbc04'],
-        [1.0, '#ffffff'],
-    ],
+    colorscale=SOFT_HEATMAP_SCALE,
     zmin=0.0, zmax=1.0,
-    colorbar=dict(title='Cosine'),
+    colorbar=dict(title='Cosine', thickness=18, outlinewidth=0),
     hovertemplate='%{x}<br>%{y}<br>cosine=%{z:.3f}<extra></extra>',
 ))
 
 # Add a horizontal/vertical line to separate ghost cluster from reference tokens
-fig.add_hline(y=n_ghost - 0.5, line=dict(color='#34a853', width=2))
-fig.add_vline(x=n_ghost - 0.5, line=dict(color='#34a853', width=2))
+fig.add_hline(y=n_ghost - 0.5, line=dict(color=HEATMAP_SEPARATOR, width=2))
+fig.add_vline(x=n_ghost - 0.5, line=dict(color=HEATMAP_SEPARATOR, width=2))
 
 fig.update_layout(
     title=f'{model_name} — Ghost Cluster vs Reference Tokens (Cosine Similarity)',
     width=1000, height=900,
     template='plotly_dark',
+    paper_bgcolor='#151515',
+    plot_bgcolor='#151515',
     xaxis=dict(tickangle=45, tickfont=dict(size=8)),
     yaxis=dict(tickfont=dict(size=8), autorange='reversed'),
 )

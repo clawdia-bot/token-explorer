@@ -23,6 +23,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from common.html import inject_dark_mode
+from common.viz import SOFT_HEATMAP_SCALE
 
 DATA = Path(__file__).parent / 'results'
 if not (DATA / 'comparison.json').exists():
@@ -109,23 +110,18 @@ fig_analogy = go.Figure(data=go.Heatmap(
     text=text_matrix,
     texttemplate='%{text}',
     textfont=dict(size=10),
-    colorscale=[
-        [0.0, '#1a1a2e'],
-        [0.3, '#16213e'],
-        [0.5, '#0f3460'],
-        [0.7, '#e94560'],
-        [0.9, '#fbbc04'],
-        [1.0, '#34a853'],
-    ],
+    colorscale=SOFT_HEATMAP_SCALE,
     zmin=0,
     zmax=1,
-    colorbar=dict(title='Cosine'),
+    colorbar=dict(title='Cosine', thickness=18, outlinewidth=0),
     hovertemplate='%{y}<br>%{x}<br>cos=%{z:.3f}<br>answer: %{text}<extra></extra>',
 ))
 
 fig_analogy.update_layout(
     title='Analogy Scorecard (* = wrong answer)',
     template='plotly_dark',
+    paper_bgcolor='#151515',
+    plot_bgcolor='#151515',
     width=900,
     height=max(300, n_models * 60 + 100),
     xaxis=dict(tickangle=45),
@@ -182,16 +178,10 @@ fig_jaccard = go.Figure(data=go.Heatmap(
     z=jacc_matrix,
     x=[names[slug] for slug in model_slugs],
     y=[names[slug] for slug in model_slugs],
-    colorscale=[
-        [0.0, '#1a1a2e'],
-        [0.3, '#0f3460'],
-        [0.6, '#e94560'],
-        [0.8, '#fbbc04'],
-        [1.0, '#34a853'],
-    ],
+    colorscale=SOFT_HEATMAP_SCALE,
     zmin=0,
     zmax=1,
-    colorbar=dict(title='Jaccard'),
+    colorbar=dict(title='Jaccard', thickness=18, outlinewidth=0),
     hovertemplate='%{x}<br>%{y}<br>Jaccard=%{z:.3f}<extra></extra>',
     texttemplate='%{z:.2f}',
     textfont=dict(size=11),
@@ -204,6 +194,8 @@ fig_jaccard.update_layout(
         f'{comp["concept_inventory_size"]} concepts)'
     ),
     template='plotly_dark',
+    paper_bgcolor='#151515',
+    plot_bgcolor='#151515',
     width=650,
     height=500,
 )
