@@ -53,6 +53,9 @@ For Phases 1 and 2, there are also top-level browser pages that let you switch b
 - `phase1-norms-and-structure/phase1_browser.html`
 - `phase2-ghost-cluster-and-analogies/phase2_browser.html`
 
+Before reopening later mechanistic phases or adding new ones, read:
+- `docs/FUTURE_NOTES.md`
+
 ## Usage
 
 Phases 1, 2, and the cross-model comparison support model selection via `--model`:
