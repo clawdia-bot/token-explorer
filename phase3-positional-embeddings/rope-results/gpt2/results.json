@@ -1,0 +1,15 @@
+{
+  "model": {
+    "name": "GPT-2",
+    "slug": "gpt2",
+    "hf_id": "gpt2",
+    "vocab_size": 50257,
+    "hidden_dim": 768,
+    "tied": true,
+    "position_type": "learned_absolute",
+    "max_positions": 1024,
+    "has_learned_positions": true
+  },
+  "compatible": false,
+  "skip_reason": "GPT-2 does not use RoPE; Phase 3B is for rotary position models."
+}

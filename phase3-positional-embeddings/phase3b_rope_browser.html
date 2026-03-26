@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#151515">
+<title>Phase 3B Browser</title>
+<style>
+  :root { color-scheme: dark; }
+  html { background:#151515; }
+  body { background:#151515; color:#eee; font-family:'SF Mono','Consolas',monospace; margin:0; padding:24px; }
+  h1 { margin:0 0 8px 0; font-size:28px; }
+  .sub { color:#888; margin-bottom:20px; }
+  .toolbar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
+  select, button { background:#262626; color:#eee; border:1px solid #444; border-radius:6px; padding:8px 10px; font:inherit; }
+  .summary { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+  .card { background:#202020; border:1px solid #333; border-radius:8px; padding:12px 14px; min-width:180px; }
+  .label { color:#8a8a8a; font-size:12px; margin-bottom:4px; }
+  .value { font-size:20px; color:#fff; }
+  .panel { background:#202020; border:1px solid #333; border-radius:8px; overflow:hidden; }
+  .panel-header { padding:10px 12px; border-bottom:1px solid #333; color:#aaa; }
+  iframe { width:100%; height:760px; border:0; background:#111; }
+  .empty { padding:24px; color:#888; }
+</style>
+</head>
+<body>
+  <h1>Phase 3B Browser</h1>
+  <div class="sub">Compare RoPE geometry and first-layer positional drift across saved models.</div>
+  <div class="toolbar">
+    <label for="model-select">Model:</label>
+    <select id="model-select"></select>
+    <button id="open-results">Open results.json</button>
+    <button id="open-charts">Open charts in new tab</button>
+  </div>
+  <div class="summary">
+    <div class="card"><div class="label">Position type</div><div class="value" id="position-type">-</div></div>
+    <div class="card"><div class="label">RoPE theta</div><div class="value" id="theta">-</div></div>
+    <div class="card"><div class="label">Rotary dim</div><div class="value" id="rotary-dim">-</div></div>
+    <div class="card"><div class="label">End score corr</div><div class="value" id="score-end">-</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">Phase 3B charts</div>
+    <div id="missing" class="empty" style="display:none;"></div>
+    <iframe id="charts-frame"></iframe>
+  </div>
+<script>
+const models = [{"slug": "gpt2", "name": "GPT-2", "compatible": false, "position_type": "learned_absolute", "skip_reason": "GPT-2 does not use RoPE; Phase 3B is for rotary position models.", "charts": true, "theta": null, "rotary_dim": null, "kernel_end": null, "query_drift_end": null, "score_spearman_end": null}, {"slug": "pythia-70m", "name": "Pythia-70m", "compatible": true, "position_type": "rope", "skip_reason": null, "charts": true, "theta": 10000.0, "rotary_dim": 16, "kernel_end": 0.16345112382170335, "query_drift_end": 0.28169541011339605, "score_spearman_end": 0.495636760861079}, {"slug": "qwen2.5-0.5b", "name": "Qwen2.5-0.5B", "compatible": true, "position_type": "rope", "skip_reason": null, "charts": true, "theta": 1000000.0, "rotary_dim": 64, "kernel_end": 0.31504107150498106, "query_drift_end": 0.3168678640613258, "score_spearman_end": 0.9766467255750787}, {"slug": "smollm2-135m", "name": "SmolLM2-135M", "compatible": true, "position_type": "rope", "skip_reason": null, "charts": true, "theta": 100000.0, "rotary_dim": 64, "kernel_end": 0.2659454819715033, "query_drift_end": 0.047400740446936, "score_spearman_end": -0.7000055766532864}];
+const bySlug = Object.fromEntries(models.map(m => [m.slug, m]));
+const select = document.getElementById('model-select');
+const chartsFrame = document.getElementById('charts-frame');
+const missing = document.getElementById('missing');
+
+models.forEach(model => {
+  const opt = document.createElement('option');
+  opt.value = model.slug;
+  opt.textContent = model.name;
+  select.appendChild(opt);
+});
+
+function update() {
+  const slug = select.value;
+  const model = bySlug[slug];
+  document.getElementById('position-type').textContent = model.position_type || '—';
+  document.getElementById('theta').textContent = model.compatible ? model.theta.toFixed(0) : '—';
+  document.getElementById('rotary-dim').textContent = model.compatible ? model.rotary_dim : '—';
+  document.getElementById('score-end').textContent = model.compatible ? model.score_spearman_end.toFixed(3) : '—';
+
+  if (model.charts) {
+    missing.style.display = 'none';
+    chartsFrame.style.display = 'block';
+    chartsFrame.src = `rope-results/${slug}/phase3b_rope_charts.html`;
+  } else {
+    chartsFrame.style.display = 'none';
+    chartsFrame.removeAttribute('src');
+    missing.style.display = 'block';
+    missing.textContent = model.skip_reason || `No charts saved yet. Run: poetry run python phase3-positional-embeddings/phase3b_rope_charts.py --model ${slug}`;
+  }
+
+  document.getElementById('open-results').onclick = () => window.open(`rope-results/${slug}/results.json`, '_blank');
+  document.getElementById('open-charts').onclick = () => {
+    if (model.charts) {
+      window.open(`rope-results/${slug}/phase3b_rope_charts.html`, '_blank');
+    }
+  };
+}
+
+select.value = "gpt2";
+select.addEventListener('change', update);
+update();
+</script>
+</body>
+</html>
