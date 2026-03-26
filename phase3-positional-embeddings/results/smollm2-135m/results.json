@@ -1,0 +1,15 @@
+{
+  "model": {
+    "name": "SmolLM2-135M",
+    "slug": "smollm2-135m",
+    "hf_id": "HuggingFaceTB/SmolLM2-135M",
+    "vocab_size": 49152,
+    "hidden_dim": 576,
+    "tied": true,
+    "position_type": "rope",
+    "max_positions": 8192,
+    "has_learned_positions": false
+  },
+  "compatible": false,
+  "skip_reason": "SmolLM2-135M uses rope position handling, so there is no learned absolute position matrix to analyze in this phase."
+}

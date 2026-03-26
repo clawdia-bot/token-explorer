@@ -1,0 +1,15 @@
+{
+  "model": {
+    "name": "Qwen2.5-0.5B",
+    "slug": "qwen2.5-0.5b",
+    "hf_id": "Qwen/Qwen2.5-0.5B",
+    "vocab_size": 151936,
+    "hidden_dim": 896,
+    "tied": true,
+    "position_type": "rope",
+    "max_positions": 32768,
+    "has_learned_positions": false
+  },
+  "compatible": false,
+  "skip_reason": "Qwen2.5-0.5B uses rope position handling, so there is no learned absolute position matrix to analyze in this phase."
+}

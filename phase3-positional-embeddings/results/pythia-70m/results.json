@@ -1,0 +1,15 @@
+{
+  "model": {
+    "name": "Pythia-70m",
+    "slug": "pythia-70m",
+    "hf_id": "EleutherAI/pythia-70m",
+    "vocab_size": 50304,
+    "hidden_dim": 512,
+    "tied": false,
+    "position_type": "rope",
+    "max_positions": 2048,
+    "has_learned_positions": false
+  },
+  "compatible": false,
+  "skip_reason": "Pythia-70m uses rope position handling, so there is no learned absolute position matrix to analyze in this phase."
+}
