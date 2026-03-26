@@ -103,10 +103,26 @@ fig.add_trace(
         x=pos_coords[:, 0],
         y=pos_coords[:, 1],
         mode='lines+markers',
-        marker=dict(size=4, color=positions, colorscale='Viridis', showscale=True, colorbar=dict(title='Position')),
+        marker=dict(size=4, color=positions, colorscale='Viridis', showscale=False),
         line=dict(color='rgba(231,223,210,0.25)', width=1),
         name='pc-path',
         hovertemplate='pos %{marker.color}: (%{x:.2f}, %{y:.2f})<extra></extra>',
+    ),
+    row=1,
+    col=2,
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=[pos_coords[0, 0], pos_coords[-1, 0]],
+        y=[pos_coords[0, 1], pos_coords[-1, 1]],
+        mode='markers+text',
+        marker=dict(size=9, color=['#e7dfd2', '#b8a06a'], line=dict(color='#151515', width=1)),
+        text=['start', 'end'],
+        textposition=['top center', 'bottom center'],
+        showlegend=False,
+        customdata=['pos 0', f'pos {len(pos_norms) - 1}'],
+        hovertemplate='%{customdata}<extra></extra>',
     ),
     row=1,
     col=2,
@@ -120,7 +136,13 @@ fig.add_trace(
         colorscale=SOFT_HEATMAP_SCALE,
         zmin=-1.0,
         zmax=1.0,
-        colorbar=dict(title='Cosine'),
+        colorbar=dict(
+            title='Cosine',
+            thickness=14,
+            len=0.38,
+            y=0.21,
+            yanchor='middle',
+        ),
         hovertemplate='pos %{x} vs %{y}: %{z:.3f}<extra></extra>',
     ),
     row=2,
@@ -175,15 +197,15 @@ fig.update_yaxes(title_text='Score', row=2, col=2, range=[0, 1.05])
 
 fig.update_layout(
     title=f'{model_name} — Phase 3 Positional Embedding Geometry',
-    width=1200,
-    height=900,
+    height=700,
     template='plotly_dark',
     paper_bgcolor='#151515',
     plot_bgcolor='#151515',
-    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
+    showlegend=False,
+    margin=dict(l=60, r=40, t=80, b=55),
 )
 
-html = fig.to_html(include_plotlyjs=True, full_html=True)
+html = fig.to_html(include_plotlyjs=True, full_html=True, config={'responsive': True})
 with open(out_path, 'w') as f:
     f.write(inject_dark_mode(html))
 

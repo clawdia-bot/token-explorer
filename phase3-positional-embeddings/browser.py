@@ -72,7 +72,7 @@ html = f"""<!DOCTYPE html>
   .value {{ font-size:20px; color:#fff; }}
   .panel {{ background:#202020; border:1px solid #333; border-radius:8px; overflow:hidden; }}
   .panel-header {{ padding:10px 12px; border-bottom:1px solid #333; color:#aaa; }}
-  iframe {{ width:100%; height:840px; border:0; background:#111; }}
+  iframe {{ width:100%; height:680px; border:0; background:#111; }}
   .empty {{ padding:24px; color:#888; }}
 </style>
 </head>
