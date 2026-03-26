@@ -36,15 +36,32 @@ class ModelData:
     hf_id: str              # HuggingFace ID
     emb: np.ndarray         # [vocab_size, hidden_dim] input embeddings
     emb_out: np.ndarray | None  # Output embeddings if untied, else None
+    pos_emb: np.ndarray | None   # Learned absolute position embeddings, if present
     tokenizer: object       # AutoTokenizer instance
     vocab_size: int
     hidden_dim: int
     tied: bool
+    max_positions: int | None
+    position_type: str
+    has_learned_positions: bool
     tokens: list            # Decoded token strings for all indices
     labels: list            # Display-friendly labels via token_display()
     norms: np.ndarray       # Precomputed L2 norms
     normed_emb: np.ndarray  # Unit-normalized embeddings
 
+
+def _extract_position_data(model, config) -> tuple[np.ndarray | None, int | None, str, bool]:
+    """Extract learned position embeddings when the architecture exposes them."""
+    max_positions = getattr(config, 'max_position_embeddings', None)
+
+    if hasattr(config, 'rope_theta') and getattr(config, 'rope_theta') is not None:
+        return None, max_positions, 'rope', False
+
+    if config.model_type == 'gpt2' and hasattr(model, 'transformer') and hasattr(model.transformer, 'wpe'):
+        pos_emb = model.transformer.wpe.weight.detach().numpy().copy()
+        return pos_emb, pos_emb.shape[0], 'learned_absolute', True
+
+    return None, max_positions, 'none', False
 
 
 def load_model(slug: str) -> ModelData:
@@ -68,6 +85,7 @@ def load_model(slug: str) -> ModelData:
     # Load full model, extract embeddings, then free model memory
     model = AutoModelForCausalLM.from_pretrained(hf_id, dtype=torch.float32)
     emb = model.get_input_embeddings().weight.detach().numpy().copy()
+    pos_emb, max_positions, position_type, has_learned_positions = _extract_position_data(model, config)
 
     emb_out = None
     if not tied:
@@ -83,6 +101,10 @@ def load_model(slug: str) -> ModelData:
     print(f"  Embedding matrix: {vocab_size} tokens x {hidden_dim} dimensions")
     if not tied and emb_out is not None:
         print(f"  Output embeddings: {emb_out.shape[0]} x {emb_out.shape[1]} (untied)")
+    if has_learned_positions and pos_emb is not None:
+        print(f"  Position embeddings: {pos_emb.shape[0]} positions x {pos_emb.shape[1]} dimensions")
+    elif max_positions is not None:
+        print(f"  Positional scheme: {position_type} (max positions: {max_positions})")
 
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(hf_id)
@@ -98,9 +120,12 @@ def load_model(slug: str) -> ModelData:
     print(f"  {name} loaded successfully.")
     return ModelData(
         name=name, slug=slug, hf_id=hf_id,
-        emb=emb, emb_out=emb_out,
+        emb=emb, emb_out=emb_out, pos_emb=pos_emb,
         tokenizer=tokenizer,
         vocab_size=vocab_size, hidden_dim=hidden_dim, tied=tied,
+        max_positions=max_positions,
+        position_type=position_type,
+        has_learned_positions=has_learned_positions,
         tokens=tokens, labels=labels,
         norms=norms, normed_emb=normed_emb,
     )
