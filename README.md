@@ -36,7 +36,7 @@ This repo started as a GPT-2 embedding investigation and expanded into a broader
 |-------|-----------|-------|
 | 1 | [`phase1-norms-and-structure/`](phase1-norms-and-structure/) | Norms, token rank, PCA, dimensionality, anisotropy, origin vs centroid, categories |
 | 2 | [`phase2-ghost-cluster-and-analogies/`](phase2-ghost-cluster-and-analogies/) | Ghost cluster, embedding analogies, nearest neighbors, outlier tokens |
-| 3 | [`phase3-positional-embeddings/`](phase3-positional-embeddings/) | Positional embedding geometry, bookend anomaly, learned sinusoids |
+| 3 | [`phase3-positional-embeddings/`](phase3-positional-embeddings/) | Learned positional embedding geometry, token-position subspaces, exact-probe stability |
 | 4 | [`phase4-cross-model/`](phase4-cross-model/) | GPT-2 vs GPT-Neo-125M vs Pythia-70m — weight tying as root cause of anisotropy |
 | 5 | [`phase5-layer-evolution/`](phase5-layer-evolution/) | Pythia-70m layer-by-layer: tracking alignment, anisotropy, and rank through depth |
 | 6 | [`phase6-attention-heads/`](phase6-attention-heads/) | L6 attention head decomposition — MLP vs attention, head taxonomy |
@@ -49,16 +49,17 @@ Each phase directory contains:
 - Python scripts to reproduce the experiments
 - Interactive HTML visualizations where applicable
 
-For Phases 1 and 2, there are also top-level browser pages that let you switch between precomputed model outputs without rerunning analysis:
+For Phases 1-3, there are also top-level browser pages that let you switch between precomputed model outputs without rerunning analysis:
 - `phase1-norms-and-structure/phase1_browser.html`
 - `phase2-ghost-cluster-and-analogies/phase2_browser.html`
+- `phase3-positional-embeddings/phase3_browser.html`
 
 Before reopening later mechanistic phases or adding new ones, read:
 - `docs/FUTURE_NOTES.md`
 
 ## Usage
 
-Phases 1, 2, and the cross-model comparison support model selection via `--model`:
+Phases 1-3 and the cross-model comparison support model selection via `--model`:
 
 ```bash
 # Run Phase 1 analysis
@@ -78,6 +79,11 @@ poetry run python phase2-ghost-cluster-and-analogies/deep_dive.py --model gpt2
 poetry run python phase2-ghost-cluster-and-analogies/charts.py --model gpt2
 poetry run python phase2-ghost-cluster-and-analogies/browser.py
 
+# Run Phase 3 analysis
+poetry run python phase3-positional-embeddings/explore.py --model gpt2
+poetry run python phase3-positional-embeddings/charts.py --model gpt2
+poetry run python phase3-positional-embeddings/browser.py
+
 # Interactive explorers (heuristic lookup, exploratory only)
 poetry run python phase2-ghost-cluster-and-analogies/analogy_explorer.py
 poetry run python phase2-ghost-cluster-and-analogies/neighbor_explorer.py
@@ -88,6 +94,8 @@ poetry run python cross-model-comparison/dashboard.py
 ```
 
 Available models: `gpt2`, `pythia-70m`, `smollm2-135m`, `qwen2.5-0.5b`
+
+Phase 3 currently performs full analysis only for models with learned absolute position embeddings. In the active registry that means GPT-2; RoPE models are recorded as explicit skips in the saved results rather than being compared under a mismatched metric.
 
 Phase 1 UMAP output is cached per model and sample size in `phase1-norms-and-structure/results/<model>/`. Once a model's UMAP has been computed, the browser and standalone HTML can be reopened without recomputing it. For larger vocabularies like Qwen, a sampled UMAP is often the better interactive default.
 

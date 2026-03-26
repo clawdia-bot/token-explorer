@@ -1,149 +1,96 @@
-# Phase 3: Positional Embeddings & Follow-ups
+# Phase 3: Positional Embeddings
 
-**Date:** 2026-02-26, 3:00 AM  
-**Explorer:** Clawdia Szczypiec  
-**Continuation of:** Phase 1-2 (Feb 25)
+## Question
 
----
+Phase 1 covered global token-embedding geometry. Phase 2 covered exact local token phenomena. Phase 3 now asks a narrower question:
 
-## Summary
+1. What structure lives in GPT-2's learned positional embedding matrix?
+2. How separate are token and position subspaces?
+3. How much does adding position perturb the exact Phase 2 token probes?
 
-Phase 1-2 explored the token embedding matrix. Phase 3 asks: what about the *other* embedding matrix? GPT-2 adds learned positional embeddings (1024 positions × 768 dims) to token embeddings before the first transformer layer. The geometry here is completely different — and reveals how the model conceptualizes sequence position.
+## Refactor Note
 
----
+This phase was rewritten to match the Phase 1-2 architecture:
 
-## 1. The Bookend Anomaly: Positions 0 and 1023
+- `explore.py` produces structured `results/<model>/results.json`
+- `charts.py` renders HTML from precomputed outputs
+- `browser.py` switches between saved model outputs
+- models without learned absolute position matrices are skipped explicitly
 
-**Finding:** Position 0 has norm **9.88** — the highest of any position, 3× the mean. Position 1023 has norm **0.12** — effectively zero.
+The older Phase 3 scripts mixed in Phase 1 and Phase 2 follow-ups such as PC1 removal and ghost-cluster interchangeability. Those topics are now treated as belonging to their original phases rather than to Phase 3.
 
-| Position | Norm | Interpretation |
-|----------|------|----------------|
-| 0 | 9.876 | "I am the BEGINNING" — massive signal |
-| 1 | 5.192 | Still elevated |
-| 10 | 3.773 | Settling toward mean |
-| 100 | 3.358 | Near mean (3.39) |
-| 512 | 3.373 | Mean plateau |
-| 1020 | 3.887 | Slight rise |
-| 1023 | 0.118 | "I don't exist" — near zero |
+## Representation Scope
 
-The norm profile is a **reverse J-curve**: massive at position 0, rapid decay, long plateau, then collapse at the very end.
+- **Representation type:** learned absolute positional embedding matrix
+- **Primary compatible model in the current registry:** GPT-2
+- **Skipped models:** Pythia-70m, SmolLM2-135M, and Qwen2.5-0.5B use RoPE rather than a learned absolute position matrix
 
-**Interpretation:** Position 0 is the most important position in GPT-2. The first token determines context framing (BOS, system prompt, etc.). The model encodes this by giving position 0 a huge embedding that dominates the token embedding when summed. At position 1023 (the context boundary), the embedding nearly vanishes — the model barely learned what to do at the edge of its context window because it rarely saw sequences that long during training.
+## Direct Observations
 
-**This is a training data artifact:** GPT-2 was trained on WebText with a 1024-token context. Position 0 saw every single training example. Position 1023 only saw examples that filled the entire window — likely a minority.
+### 1. The norm profile is sharply asymmetric
 
----
+- Position `0` has norm `9.88`, the largest in the matrix
+- Position `1023` has norm `0.12`, effectively collapsing at the context edge
+- Most interior positions sit on a much flatter plateau near `3.35`
 
-## 2. Periodicity: The Learned Sinusoid
+This is the main structural fact of GPT-2's learned position table: the beginning is loud, the end is faint.
 
-**Finding:** The top variance dimensions of positional embeddings are dominated by frequency 2 (period 512). Multiple dimensions show clear sinusoidal patterns.
+### 2. Nearby positions are extremely similar
 
-Top FFT frequencies for high-variance dimensions:
-- Dim 724: period 512, 1024, 341
-- Dim 361: period 512, 1024, 171  
-- Dim 459: period 512, 1024, 341
+- Gap `1` cosine: `0.997`
+- Gap `32` cosine: `0.913`
+- Gap `128` cosine: `0.259`
+- Gap `256` cosine: `-0.446`
 
-**This is remarkable.** The original Transformer paper (Vaswani et al.) used *fixed* sinusoidal positional encodings. GPT-2 uses *learned* encodings — and it independently discovered sinusoidal structure. The model reinvented the theoretical solution through gradient descent alone.
+The path through position space is smooth locally, then rotates far enough that medium-range positions become weakly aligned or opposed.
 
-The dominant period of 512 = context_length/2 means positions naturally divide into "first half" and "second half" along the primary axis.
+### 3. Token and position occupy unusually different subspaces
 
----
+- Top-5 principal subspace alignment: `0.055` vs random baseline `0.081`
+- Top-10 alignment: `0.079` vs random baseline `0.114`
+- Top-50 alignment: `0.143` vs random baseline `0.255`
+- Per-dimension variance Spearman correlation is strongly negative in the saved results
 
-## 3. The Cosine Heatmap: A Wave Equation
+The position matrix does not merely avoid the most important token directions. It is less aligned with them than a random subspace would be.
 
-The cosine similarity between positions forms a beautiful wave pattern:
+### 4. Exact Phase 2 probes stay fairly stable, but not perfectly
 
-- Adjacent positions: cosine ≈ 0.997 (nearly identical)
-- 100 apart: cosine ≈ 0.35
-- 250 apart: cosine ≈ 0
-- 500 apart: cosine ≈ -0.5 (opposite!)
+Using the same exact concept probes introduced in Phase 2:
 
-Positions **rotate through the embedding space** — position 0 and position 500 point in roughly opposite directions. This is exactly what sinusoidal embeddings do: they encode position as a phase angle.
+- Mean nearest-neighbor Jaccard overlap with position `0` is `0.885` at position `1`
+- It falls to about `0.77` through much of the middle context
+- It drops to `0.606` at position `1023`
 
----
+So position perturbs local token neighborhoods, but usually does not destroy them until the context edge.
 
-## 4. Token and Position: Orthogonal Subspaces
+### 5. The curated analogy battery stays intact under a shared position shift
 
-**Finding:** Token and positional embeddings use **completely different** dimensions.
+For GPT-2, the Phase 2 four-item analogy battery remains `4/4` top-1 across all sampled positions in the current implementation.
 
-| Metric | Value | Random baseline |
-|--------|-------|-----------------|
-| Top-5 PC alignment | 0.055 | 0.081 |
-| Top-10 PC alignment | 0.079 | 0.114 |
-| Top-50 PC alignment | 0.143 | 0.255 |
-| Per-dim variance correlation | ρ = -0.625 | 0 |
-| Top-10 variance dim overlap | 0/10 | ~0.13 |
+That is a direct observation about the static embedding arithmetic after adding the same position vector to all candidates. It does **not** imply that contextual analogy behavior is unchanged deeper in the network.
 
-The subspaces are **more orthogonal than random chance**. Not only do they not share dimensions — they actively avoid each other's preferred dimensions. The negative correlation (ρ = -0.625) means dimensions that are important for token identity are specifically *unimportant* for position, and vice versa.
+## Interpretations
 
-**Interpretation:** The model partitioned the 768-dimensional space into two nearly independent subspaces: one for "what" (token identity) and one for "where" (position). This is elegant — it means position doesn't interfere with token identity and vice versa. The attention layers can read "what" and "where" from different dimensions of the same vector.
+- The very large position-0 norm is consistent with GPT-2 learning a strong "sequence start" bias without an explicit BOS token.
+- The near-zero final position is consistent with weak training pressure at the context limit.
+- The low subspace alignment suggests GPT-2 partitioned the residual stream into partly separate "what token is this?" and "where am I?" directions before any attention layer runs.
+- The fact that exact probe neighborhoods mostly survive positional addition helps explain why the semantic structure seen in Phases 1 and 2 remains recognizable after the first embedding sum.
 
-This also explains why **token neighborhoods are stable across positions** (17-18/20 overlap at any position): since position lives in orthogonal dimensions, adding positional embeddings rotates tokens within their subspace without changing their relative relationships much.
+## Limitations
 
----
+- These claims apply to **learned absolute** position matrices, not to RoPE or ALiBi.
+- The current active registry only has one learned-absolute compatible model, so Phase 3 is descriptive rather than comparative.
+- The analogy result here is about static vector arithmetic after adding position, not about contextual hidden states or logits.
 
-## 5. Removing PC1: The Anisotropy Killer
+## Files
 
-**Finding:** Removing the first principal component from token embeddings drops mean pairwise cosine from **0.269 to 0.000** — perfect isotropy.
+- `explore.py`: structured positional analysis and exact-probe interaction metrics
+- `charts.py`: precomputed charts HTML
+- `browser.py`: multi-model results browser
+- `results/<model>/results.json`: saved metrics and compatibility status
 
-PC1 is the "frequency/salience" axis. All tokens have a positive projection onto it (hence the 0.27 mean cosine — they all point "forward" along PC1). Remove it, and the remaining structure is perfectly isotropic.
+## Next Useful Extensions
 
-**Analogies still work without PC1:**
-- king:queen::man:? → " woman" (cos 0.589, down from 0.662)
-- France:Paris::Japan:? → " Tokyo" (cos 0.622, down from 0.688)
-
-Slight degradation but still clear. The frequency axis contributes to analogies (common tokens benefit from the bias) but isn't essential.
-
----
-
-## 6. Ghost Cluster: Confirmed Interchangeable
-
-Ghost cluster (control chars) pairwise L2 distance: **0.46** (mean)  
-Random token pair L2 distance: **4.82** (mean)  
-Ratio: **0.095** — ghost tokens are 10× closer to each other than random pairs.
-
-Since GPT-2 ties input and output embeddings (wte = lm_head), ghost tokens would produce nearly identical next-token probability distributions. They are functionally interchangeable in both directions. This is the model saying "I literally cannot tell these apart."
-
----
-
-## 7. Position 0 Changes Everything
-
-When a token is at position 0, its combined embedding (token + position) has dramatically different properties:
-
-- `" the"` at pos 0: norm **10.22** (pos 0 dominates!)
-- `" the"` at pos 500: norm **4.26**
-- Cosine between the two: **0.203** (barely the same token)
-
-Position 0 essentially **overwrites** the token embedding. The model's first impression of a sequence is dominated by "this is the beginning" rather than "this is the word 'the'."
-
----
-
-## Files Added
-
-| File | Description |
-|------|-------------|
-| `phase3_positional.py` | Position embeddings, PC1 removal, ghost cluster test |
-| `phase3b_position_deep.py` | Position anomalies, periodicity, orthogonality |
-| `phase3c_pos_viz.py` | Interactive visualizations |
-| `positional_embeddings.html` | 4-panel positional embedding visualization |
-| `positional_3d.html` | 3D PCA path through position space |
-
----
-
-## Updated Future Directions
-
-1. **Cross-model positional comparison:** Do models with RoPE (Llama, Mistral) show the same orthogonality? RoPE is *designed* to be orthogonal — but GPT-2 discovered it accidentally. → *Partially answered in [Phase 4](../phase4-cross-model/FINDINGS.md): GPT-Neo shows no orthogonality; it's GPT-2 specific.*
-
-2. **Subspace partition quantification:** Can we cleanly separate the 768 dims into "token dims" and "position dims"? What lives in the overlap region?
-
-3. **Layer evolution:** How does the token-position orthogonality change through the 12 transformer layers? Does it merge or stay separate? → *Explored in [Phase 5](../phase5-layer-evolution/FINDINGS.md).*
-
-4. **Position 0 as BOS:** Is position 0's huge norm functionally equivalent to a BOS token? Could you achieve the same effect with a normal-norm position embedding plus an explicit BOS token?
-
-5. **Training dynamics:** Does position 0's norm grow throughout training, or is it large from early on? (Would need training checkpoints to answer.)
-
-6. **The edge effect:** Position 1023's near-zero norm suggests the model can't handle context edges well. Is this why longer contexts needed architectural changes (ALiBi, RoPE)?
-
----
-
-*Position 0 is the model's loudest opinion. Position 1023 is its most uncertain shrug.*
+1. Add a learned-absolute comparison model back into the active registry so Phase 3 can become genuinely cross-model.
+2. Compare learned absolute position matrices against RoPE-derived effective position directions rather than skipping them entirely.
+3. Carry the same exact probe set into Phase 5-style layer tracking to measure where position-token separation gets merged downstream.
